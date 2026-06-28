@@ -7,7 +7,10 @@ A cross-platform desktop app that orchestrates autonomous coding agents — Clau
 - **Projects** — register local git repos; each gets a scaffolded `.orchestrator/` to steer behavior.
 - **Tasks** — units of work with priority, dependencies, retry caps, tags, and a chosen agent.
 - **Autonomous scheduler** — allocates pending tasks to concurrent sessions, with globally and per-project configurable concurrency.
-- **Multi-agent** — Claude is the default orchestrator/executor; Gemini and Codex are delegable sub-agents. Each CLI runs with streaming JSON output, parsed into a normalized event stream.
+- **Multi-agent** — Claude is the default orchestrator/executor; Gemini and Codex are delegable sub-agents (per-project **allowed-agents** set, Claude only by default). Each CLI runs with streaming JSON output, parsed into a normalized event stream.
+- **Usage-balanced dispatch** — unpinned tasks go to the least-used available agent, so work sheds from Claude to Gemini/Codex as usage runs ahead.
+- **Scheduled tasks** — recurring jobs defined as markdown files (`.orchestrator/scheduled/*.md`) with a cron/interval in front matter; discovered on launch and re-scanned periodically.
+- **Model selection** — pick a model per task, per scheduled job, or per follow-up message; defaults to the latest Opus for Claude and each CLI's latest otherwise.
 - **Roadmap loop** — when a project's queue empties, an agent reads the project's direction and proposes the next batch of tasks.
 - **Verification** — finished tasks are independently judged; failed verification re-queues the task with reviewer feedback, up to `max_attempts`.
 - **Usage / limits tracking** — per-agent token and cost usage over a rolling window (default 5h), shown in the top bar.
@@ -32,7 +35,8 @@ claude-orchestrator/
 │       ├── db/               # SQLite store (schema.sql, queries, tests)
 │       ├── agents/           # claude.rs, gemini.rs, codex.rs adapters + stream-json parsing
 │       ├── runner.rs         # process runner (spawn, stream, cancel)
-│       ├── engine.rs         # scheduler / roadmap / verify loop
+│       ├── engine.rs         # scheduler / roadmap / verify loop, agent balancing
+│       ├── scheduled.rs      # scheduled-task (cron/interval) parsing + next-run
 │       ├── parse.rs          # roadmap & verify JSON output contracts
 │       ├── conventions.rs    # .orchestrator/ file resolution + scaffolding
 │       ├── templates/        # embedded default .orchestrator files

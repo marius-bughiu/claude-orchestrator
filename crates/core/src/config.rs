@@ -70,6 +70,11 @@ pub struct Settings {
     pub roadmap_enabled: bool,
     /// Global default for whether finished tasks are verified.
     pub verify_enabled: bool,
+    /// When true, tasks that don't pin an agent are dispatched to the least-used
+    /// available agent among the project's allowed set, to even out usage.
+    pub balance_agents: bool,
+    /// How often to re-scan projects for scheduled-task markdown files, seconds.
+    pub schedule_refresh_secs: u64,
     /// Per-agent configuration, keyed by agent name.
     pub agents: BTreeMap<String, AgentConfig>,
 }
@@ -89,6 +94,8 @@ impl Default for Settings {
             session_timeout_secs: 1800,
             roadmap_enabled: true,
             verify_enabled: true,
+            balance_agents: true,
+            schedule_refresh_secs: 300,
             agents,
         }
     }

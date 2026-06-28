@@ -14,6 +14,22 @@ use std::sync::{Arc, Mutex};
 
 const SCHEMA: &str = include_str!("schema.sql");
 
+/// Additive column migrations for databases created before a column existed.
+/// Each is idempotent: on a fresh DB the column already exists and the ALTER
+/// fails with "duplicate column", which we ignore.
+const MIGRATIONS: &[&str] = &[
+    "ALTER TABLE projects ADD COLUMN allowed_agents TEXT NOT NULL DEFAULT '[\"claude\"]'",
+    "ALTER TABLE tasks ADD COLUMN auto_agent INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE tasks ADD COLUMN model TEXT",
+];
+
+fn run_migrations(conn: &Connection) {
+    for stmt in MIGRATIONS {
+        // Ignore "duplicate column" (already applied) and similar idempotent errors.
+        let _ = conn.execute(stmt, []);
+    }
+}
+
 /// Thread-safe handle to the orchestrator database.
 #[derive(Clone)]
 pub struct Db {
@@ -35,6 +51,7 @@ impl Db {
 
     fn from_connection(conn: Connection) -> Result<Db> {
         conn.execute_batch(SCHEMA)?;
+        run_migrations(&conn);
         Ok(Db {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -91,15 +108,17 @@ impl Db {
     }
 
     pub fn upsert_project(&self, p: &Project) -> Result<()> {
+        let allowed = serde_json::to_string(&p.allowed_agents)?;
         let conn = self.lock();
         conn.execute(
             "INSERT INTO projects
-               (id, name, path, description, enabled, default_agent, max_concurrent,
-                roadmap_enabled, verify_enabled, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+               (id, name, path, description, enabled, default_agent, allowed_agents,
+                max_concurrent, roadmap_enabled, verify_enabled, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
              ON CONFLICT(id) DO UPDATE SET
                name=excluded.name, path=excluded.path, description=excluded.description,
                enabled=excluded.enabled, default_agent=excluded.default_agent,
+               allowed_agents=excluded.allowed_agents,
                max_concurrent=excluded.max_concurrent, roadmap_enabled=excluded.roadmap_enabled,
                verify_enabled=excluded.verify_enabled, updated_at=excluded.updated_at",
             params![
@@ -109,6 +128,7 @@ impl Db {
                 p.description,
                 p.enabled,
                 p.default_agent.as_str(),
+                allowed,
                 p.max_concurrent,
                 p.roadmap_enabled,
                 p.verify_enabled,
@@ -169,12 +189,14 @@ impl Db {
         let conn = self.lock();
         conn.execute(
             "INSERT INTO tasks
-               (id, project_id, title, description, status, priority, agent, parent_id,
-                depends_on, attempts, max_attempts, tags, auto_generated, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+               (id, project_id, title, description, status, priority, agent, auto_agent, model,
+                parent_id, depends_on, attempts, max_attempts, tags, auto_generated,
+                created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
              ON CONFLICT(id) DO UPDATE SET
                title=excluded.title, description=excluded.description, status=excluded.status,
-               priority=excluded.priority, agent=excluded.agent, parent_id=excluded.parent_id,
+               priority=excluded.priority, agent=excluded.agent, auto_agent=excluded.auto_agent,
+               model=excluded.model, parent_id=excluded.parent_id,
                depends_on=excluded.depends_on, attempts=excluded.attempts,
                max_attempts=excluded.max_attempts, tags=excluded.tags,
                auto_generated=excluded.auto_generated, updated_at=excluded.updated_at",
@@ -186,6 +208,8 @@ impl Db {
                 t.status.as_str(),
                 t.priority,
                 t.agent.as_str(),
+                t.auto_agent,
+                t.model,
                 t.parent_id,
                 depends_on,
                 t.attempts,
@@ -467,6 +491,130 @@ impl Db {
         .map_err(Into::into)
     }
 
+    // ---- Scheduled tasks ----------------------------------------------------
+
+    pub fn upsert_scheduled(&self, s: &ScheduledTask) -> Result<()> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO scheduled_tasks
+               (id, project_id, path, rel_path, title, schedule, schedule_kind, schedule_desc,
+                agent, model, priority, enabled, valid, error, body, last_run, next_run,
+                created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+             ON CONFLICT(id) DO UPDATE SET
+               path=excluded.path, rel_path=excluded.rel_path, title=excluded.title,
+               schedule=excluded.schedule, schedule_kind=excluded.schedule_kind,
+               schedule_desc=excluded.schedule_desc, agent=excluded.agent, model=excluded.model,
+               priority=excluded.priority, enabled=excluded.enabled, valid=excluded.valid,
+               error=excluded.error, body=excluded.body, next_run=excluded.next_run,
+               updated_at=excluded.updated_at",
+            params![
+                s.id,
+                s.project_id,
+                s.path,
+                s.rel_path,
+                s.title,
+                s.schedule,
+                s.schedule_kind,
+                s.schedule_desc,
+                s.agent.map(|a| a.as_str()),
+                s.model,
+                s.priority,
+                s.enabled,
+                s.valid,
+                s.error,
+                s.body,
+                s.last_run,
+                s.next_run,
+                s.created_at,
+                s.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_scheduled(&self, project_id: Option<&str>) -> Result<Vec<ScheduledTask>> {
+        let conn = self.lock();
+        let (sql, filtered) = match project_id {
+            Some(_) => (
+                "SELECT * FROM scheduled_tasks WHERE project_id = ?1 ORDER BY next_run ASC",
+                true,
+            ),
+            None => ("SELECT * FROM scheduled_tasks ORDER BY next_run ASC", false),
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = if filtered {
+            stmt.query_map(params![project_id.unwrap()], map_scheduled)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        } else {
+            stmt.query_map([], map_scheduled)?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        Ok(rows)
+    }
+
+    pub fn get_scheduled(&self, id: &str) -> Result<Option<ScheduledTask>> {
+        let conn = self.lock();
+        Ok(conn
+            .query_row(
+                "SELECT * FROM scheduled_tasks WHERE id = ?1",
+                params![id],
+                map_scheduled,
+            )
+            .optional()?)
+    }
+
+    /// Scheduled tasks that are enabled, valid, and due (next_run <= now).
+    pub fn due_scheduled(&self, now: DateTime<Utc>) -> Result<Vec<ScheduledTask>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT * FROM scheduled_tasks
+             WHERE enabled = 1 AND valid = 1 AND next_run IS NOT NULL AND next_run <= ?1
+             ORDER BY next_run ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![now], map_scheduled)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_scheduled_run(
+        &self,
+        id: &str,
+        last_run: DateTime<Utc>,
+        next_run: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        self.lock().execute(
+            "UPDATE scheduled_tasks SET last_run = ?2, next_run = ?3 WHERE id = ?1",
+            params![id, last_run, next_run],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_scheduled_enabled(&self, id: &str, enabled: bool) -> Result<()> {
+        self.lock().execute(
+            "UPDATE scheduled_tasks SET enabled = ?2 WHERE id = ?1",
+            params![id, enabled],
+        )?;
+        Ok(())
+    }
+
+    /// Remove scheduled rows for a project whose ids are not in `keep`.
+    pub fn prune_scheduled(&self, project_id: &str, keep: &[String]) -> Result<()> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare("SELECT id FROM scheduled_tasks WHERE project_id = ?1")?;
+        let existing: Vec<String> = stmt
+            .query_map(params![project_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        for id in existing {
+            if !keep.contains(&id) {
+                conn.execute("DELETE FROM scheduled_tasks WHERE id = ?1", params![id])?;
+            }
+        }
+        Ok(())
+    }
+
     // ---- Timeline -----------------------------------------------------------
 
     pub fn timeline(&self, limit: u32) -> Result<Vec<TimelineItem>> {
@@ -515,6 +663,8 @@ fn map_project(r: &Row) -> rusqlite::Result<Project> {
         enabled: r.get("enabled")?,
         default_agent: AgentKind::from_str(&r.get::<_, String>("default_agent")?)
             .unwrap_or(AgentKind::Claude),
+        allowed_agents: serde_json::from_str(&r.get::<_, String>("allowed_agents")?)
+            .unwrap_or_else(|_| vec![AgentKind::Claude]),
         max_concurrent: r.get("max_concurrent")?,
         roadmap_enabled: r.get("roadmap_enabled")?,
         verify_enabled: r.get("verify_enabled")?,
@@ -534,12 +684,40 @@ fn map_task(r: &Row) -> rusqlite::Result<Task> {
         status: TaskStatus::from_str(&r.get::<_, String>("status")?),
         priority: r.get("priority")?,
         agent: AgentKind::from_str(&r.get::<_, String>("agent")?).unwrap_or(AgentKind::Claude),
+        auto_agent: r.get("auto_agent")?,
+        model: r.get("model")?,
         parent_id: r.get("parent_id")?,
         depends_on: serde_json::from_str(&depends_on).unwrap_or_default(),
         attempts: r.get::<_, i64>("attempts")? as u32,
         max_attempts: r.get::<_, i64>("max_attempts")? as u32,
         tags: serde_json::from_str(&tags).unwrap_or_default(),
         auto_generated: r.get("auto_generated")?,
+        created_at: r.get("created_at")?,
+        updated_at: r.get("updated_at")?,
+    })
+}
+
+fn map_scheduled(r: &Row) -> rusqlite::Result<ScheduledTask> {
+    Ok(ScheduledTask {
+        id: r.get("id")?,
+        project_id: r.get("project_id")?,
+        path: r.get("path")?,
+        rel_path: r.get("rel_path")?,
+        title: r.get("title")?,
+        schedule: r.get("schedule")?,
+        schedule_kind: r.get("schedule_kind")?,
+        schedule_desc: r.get("schedule_desc")?,
+        agent: r
+            .get::<_, Option<String>>("agent")?
+            .and_then(|a| AgentKind::from_str(&a)),
+        model: r.get("model")?,
+        priority: r.get("priority")?,
+        enabled: r.get("enabled")?,
+        valid: r.get("valid")?,
+        error: r.get("error")?,
+        body: r.get("body")?,
+        last_run: r.get("last_run")?,
+        next_run: r.get("next_run")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })

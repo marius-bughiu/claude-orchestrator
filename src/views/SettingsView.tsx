@@ -85,8 +85,13 @@ export function SettingsView() {
               {AGENTS.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </label>
+          <label className="text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Scheduled-task refresh (seconds)</span>
+            <input type="number" min={30} className="input" value={draft.scheduleRefreshSecs}
+              onChange={(e) => set({ scheduleRefreshSecs: Math.max(30, Number(e.target.value)) })} />
+          </label>
         </div>
-        <div className="mt-4 flex gap-6">
+        <div className="mt-4 flex flex-wrap gap-6">
           <label className="flex items-center gap-2 text-sm text-neutral-300">
             <input type="checkbox" checked={draft.roadmapEnabled} onChange={(e) => set({ roadmapEnabled: e.target.checked })} />
             Roadmap loop (global)
@@ -94,6 +99,10 @@ export function SettingsView() {
           <label className="flex items-center gap-2 text-sm text-neutral-300">
             <input type="checkbox" checked={draft.verifyEnabled} onChange={(e) => set({ verifyEnabled: e.target.checked })} />
             Auto-verify (global)
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.balanceAgents} onChange={(e) => set({ balanceAgents: e.target.checked })} />
+            Balance agent usage
           </label>
         </div>
       </section>

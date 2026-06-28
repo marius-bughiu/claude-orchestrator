@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS projects (
     description      TEXT,
     enabled          INTEGER NOT NULL DEFAULT 1,
     default_agent    TEXT NOT NULL DEFAULT 'claude',
+    allowed_agents   TEXT NOT NULL DEFAULT '["claude"]',
     max_concurrent   INTEGER,
     roadmap_enabled  INTEGER NOT NULL DEFAULT 1,
     verify_enabled   INTEGER NOT NULL DEFAULT 1,
@@ -31,6 +32,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     status          TEXT NOT NULL DEFAULT 'pending',
     priority        INTEGER NOT NULL DEFAULT 50,
     agent           TEXT NOT NULL DEFAULT 'claude',
+    auto_agent      INTEGER NOT NULL DEFAULT 1,
+    model           TEXT,
     parent_id       TEXT,
     depends_on      TEXT NOT NULL DEFAULT '[]',
     attempts        INTEGER NOT NULL DEFAULT 0,
@@ -92,3 +95,27 @@ CREATE TABLE IF NOT EXISTS usage_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_agent_time ON usage_records(agent, created_at);
+
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id             TEXT PRIMARY KEY,
+    project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    path           TEXT NOT NULL,
+    rel_path       TEXT NOT NULL,
+    title          TEXT NOT NULL,
+    schedule       TEXT NOT NULL DEFAULT '',
+    schedule_kind  TEXT NOT NULL DEFAULT '',
+    schedule_desc  TEXT NOT NULL DEFAULT '',
+    agent          TEXT,
+    model          TEXT,
+    priority       INTEGER NOT NULL DEFAULT 50,
+    enabled        INTEGER NOT NULL DEFAULT 1,
+    valid          INTEGER NOT NULL DEFAULT 1,
+    error          TEXT,
+    body           TEXT NOT NULL DEFAULT '',
+    last_run       TEXT,
+    next_run       TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_project ON scheduled_tasks(project_id);

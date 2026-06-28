@@ -19,6 +19,7 @@ pub mod event;
 pub mod models;
 pub mod parse;
 pub mod runner;
+pub mod scheduled;
 pub mod service;
 pub mod util;
 

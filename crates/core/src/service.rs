@@ -34,6 +34,8 @@ pub struct CreateTaskInput {
     #[serde(default)]
     pub agent: Option<AgentKind>,
     #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
     pub depends_on: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -86,6 +88,7 @@ pub fn add_project(db: &Db, input: AddProjectInput) -> Result<Project> {
         description: input.description,
         enabled: true,
         default_agent: AgentKind::Claude,
+        allowed_agents: vec![AgentKind::Claude],
         max_concurrent: None,
         roadmap_enabled: true,
         verify_enabled: true,
@@ -108,6 +111,17 @@ pub fn create_task(db: &Db, input: CreateTaskInput) -> Result<Task> {
     }
     // Ensure the project exists.
     let project = db.get_project(&input.project_id)?;
+
+    // If an agent is explicitly requested it must be allowed for this project.
+    if let Some(agent) = input.agent {
+        if !project.allows(agent) {
+            return Err(CoreError::invalid(format!(
+                "agent {} is not allowed for this project",
+                agent.as_str()
+            )));
+        }
+    }
+    let auto_agent = input.agent.is_none();
     let now = Utc::now();
     let task = Task {
         id: Uuid::new_v4().to_string(),
@@ -117,6 +131,8 @@ pub fn create_task(db: &Db, input: CreateTaskInput) -> Result<Task> {
         status: TaskStatus::Pending,
         priority: input.priority.unwrap_or(50),
         agent: input.agent.unwrap_or(project.default_agent),
+        auto_agent,
+        model: input.model.filter(|m| !m.trim().is_empty()),
         parent_id: None,
         depends_on: input.depends_on,
         attempts: 0,
@@ -176,6 +192,7 @@ mod tests {
                 description: "details".into(),
                 priority: Some(100),
                 agent: None,
+                model: None,
                 depends_on: vec![],
                 tags: vec!["x".into()],
                 max_attempts: None,

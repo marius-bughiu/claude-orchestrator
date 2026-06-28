@@ -8,6 +8,7 @@ import type {
   OrchestratorEvent,
   OrchestratorStatus,
   Project,
+  ScheduledTask,
   Session,
   SessionEvent,
   Settings,
@@ -49,8 +50,8 @@ export const listSessions = (opts: { taskId?: string; projectId?: string } = {})
 export const getSession = (id: string) => invoke<Session>("get_session", { id });
 export const getSessionEvents = (id: string) =>
   invoke<SessionEvent[]>("get_session_events", { id });
-export const sendMessage = (sessionId: string, message: string) =>
-  invoke<string>("send_message", { sessionId, message });
+export const sendMessage = (sessionId: string, message: string, model?: string) =>
+  invoke<string>("send_message", { sessionId, message, model: model ?? null });
 export const stopSession = (id: string) => invoke<void>("stop_session", { id });
 
 // ---- Orchestrator ----------------------------------------------------------
@@ -64,6 +65,13 @@ export const triggerRoadmap = (projectId: string) =>
   invoke<void>("trigger_roadmap", { projectId });
 export const getTimeline = (limit?: number) =>
   invoke<TimelineItem[]>("get_timeline", { limit: limit ?? null });
+
+// ---- Scheduled tasks -------------------------------------------------------
+export const listScheduled = (projectId?: string) =>
+  invoke<ScheduledTask[]>("list_scheduled", { projectId: projectId ?? null });
+export const refreshScheduled = () => invoke<number>("refresh_scheduled");
+export const setScheduledEnabled = (id: string, enabled: boolean) =>
+  invoke<void>("set_scheduled_enabled", { id, enabled });
 
 // ---- Events ----------------------------------------------------------------
 export function onOrchestratorEvent(

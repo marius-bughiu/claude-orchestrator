@@ -25,6 +25,8 @@ pub enum OrchestratorEvent {
     TaskUpdated { task: Task },
     /// Top-level orchestrator status changed; the UI should refetch status.
     StatusChanged,
+    /// The set of scheduled tasks changed (discovery or a firing); refetch them.
+    ScheduledChanged,
     /// Usage totals changed; the UI should refresh the header.
     UsageUpdated,
     /// Free-form log line for the activity feed.

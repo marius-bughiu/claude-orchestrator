@@ -80,6 +80,9 @@ pub fn run() {
             commands::update_settings,
             commands::trigger_roadmap,
             commands::get_timeline,
+            commands::list_scheduled,
+            commands::refresh_scheduled,
+            commands::set_scheduled_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Claude Orchestrator");

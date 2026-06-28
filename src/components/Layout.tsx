@@ -1,12 +1,13 @@
 import { NavLink, Outlet } from "react-router-dom";
 import clsx from "clsx";
-import { FolderGit2, ListTodo, GanttChartSquare, Settings as SettingsIcon, Network } from "lucide-react";
+import { FolderGit2, ListTodo, GanttChartSquare, Clock, Settings as SettingsIcon, Network } from "lucide-react";
 import { UsageBar } from "./UsageBar";
 import { useStore } from "../store";
 
 const NAV = [
   { to: "/projects", label: "Projects", icon: FolderGit2 },
   { to: "/tasks", label: "Tasks", icon: ListTodo },
+  { to: "/scheduled", label: "Scheduled", icon: Clock },
   { to: "/timeline", label: "Timeline", icon: GanttChartSquare },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];

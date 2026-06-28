@@ -4,6 +4,7 @@ import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Te
 import * as api from "../api";
 import type { Session, SessionEvent } from "../api/types";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
+import { ModelInput } from "../components/ModelInput";
 import { formatCost, formatDuration, formatTokens } from "../lib/format";
 
 function EventRow({ event }: { event: SessionEvent }) {
@@ -76,6 +77,7 @@ export function SessionDetailView() {
   const [session, setSession] = useState<Session | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [message, setMessage] = useState("");
+  const [model, setModel] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -114,7 +116,7 @@ export function SessionDetailView() {
     if (!message.trim()) return;
     setSending(true);
     try {
-      const newId = await api.sendMessage(id, message.trim());
+      const newId = await api.sendMessage(id, message.trim(), model.trim() || undefined);
       setMessage("");
       navigate(`/sessions/${newId}`);
     } catch (e) {
@@ -178,6 +180,9 @@ export function SessionDetailView() {
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           />
+          <div className="w-40 shrink-0">
+            <ModelInput agent={session.agent} value={model} onChange={setModel} id="session-model" />
+          </div>
           <button className="btn btn-primary shrink-0" onClick={send} disabled={sending || !message.trim()}>
             <Send size={14} /> Send
           </button>

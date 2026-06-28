@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useStore } from "../store";
 import * as api from "../api";
 import type { AgentKind } from "../api/types";
 import { Modal } from "./Modal";
+import { ModelInput } from "./ModelInput";
 
-const AGENTS: AgentKind[] = ["claude", "gemini", "codex"];
 const PRIORITIES = [
   { label: "Low", value: 0 },
   { label: "Normal", value: 50 },
@@ -28,8 +28,14 @@ export function CreateTaskModal({
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState(50);
   const [agent, setAgent] = useState<AgentKind | "">("");
+  const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const project = useMemo(() => projects.find((p) => p.id === pid), [projects, pid]);
+  const allowedAgents = project?.allowedAgents ?? ["claude"];
+  // The agent whose suggestions to show: explicit choice, else project default.
+  const modelAgent: AgentKind = (agent || project?.defaultAgent || "claude") as AgentKind;
 
   const submit = async () => {
     if (!pid) return setError("Select a project.");
@@ -43,6 +49,7 @@ export function CreateTaskModal({
         description,
         priority,
         agent: agent || null,
+        model: model.trim() || null,
       });
       await refreshTasks();
       onClose();
@@ -59,7 +66,7 @@ export function CreateTaskModal({
         {!lockProject && (
           <div>
             <label className="mb-1 block text-xs text-neutral-400">Project</label>
-            <select className="input" value={pid} onChange={(e) => setPid(e.target.value)}>
+            <select className="input" value={pid} onChange={(e) => { setPid(e.target.value); setAgent(""); }}>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -81,7 +88,7 @@ export function CreateTaskModal({
             placeholder="Describe the goal precisely. The executing agent has no other context."
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="mb-1 block text-xs text-neutral-400">Priority</label>
             <select className="input" value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
@@ -93,13 +100,23 @@ export function CreateTaskModal({
           <div>
             <label className="mb-1 block text-xs text-neutral-400">Agent</label>
             <select className="input" value={agent} onChange={(e) => setAgent(e.target.value as AgentKind | "")}>
-              <option value="">Project default</option>
-              {AGENTS.map((a) => (
+              <option value="">Auto / balanced</option>
+              {allowedAgents.map((a) => (
                 <option key={a} value={a}>{a}</option>
               ))}
             </select>
           </div>
+          <div>
+            <label className="mb-1 block text-xs text-neutral-400">Model</label>
+            <ModelInput agent={modelAgent} value={model} onChange={setModel} id="task-model" />
+          </div>
         </div>
+        {allowedAgents.length === 1 && (
+          <p className="text-[11px] text-neutral-500">
+            This project only allows <span className="text-neutral-300">{allowedAgents[0]}</span>.
+            Enable more agents in the project settings to balance load.
+          </p>
+        )}
         {error && <div className="text-xs text-red-400">{error}</div>}
         <div className="mt-1 flex justify-end gap-2">
           <button className="btn" onClick={onClose}>Cancel</button>

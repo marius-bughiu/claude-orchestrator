@@ -4,6 +4,7 @@ import type {
   OrchestratorEvent,
   OrchestratorStatus,
   Project,
+  ScheduledTask,
   Settings,
   Task,
   TimelineItem,
@@ -23,6 +24,7 @@ interface StoreState {
   tasks: Task[];
   settings: Settings | null;
   timeline: TimelineItem[];
+  scheduled: ScheduledTask[];
   logs: LogLine[];
 
   init: () => Promise<void>;
@@ -31,6 +33,7 @@ interface StoreState {
   refreshTasks: () => Promise<void>;
   refreshTimeline: () => Promise<void>;
   refreshSettings: () => Promise<void>;
+  refreshScheduled: () => Promise<void>;
   refreshAll: () => Promise<void>;
   handleEvent: (event: OrchestratorEvent) => void;
 }
@@ -45,6 +48,7 @@ export const useStore = create<StoreState>((set, get) => ({
   tasks: [],
   settings: null,
   timeline: [],
+  scheduled: [],
   logs: [],
 
   init: async () => {
@@ -67,16 +71,18 @@ export const useStore = create<StoreState>((set, get) => ({
   refreshTasks: async () => set({ tasks: await api.listTasks() }),
   refreshTimeline: async () => set({ timeline: await api.getTimeline(200) }),
   refreshSettings: async () => set({ settings: await api.getSettings() }),
+  refreshScheduled: async () => set({ scheduled: await api.listScheduled() }),
 
   refreshAll: async () => {
-    const [status, projects, tasks, timeline, settings] = await Promise.all([
+    const [status, projects, tasks, timeline, settings, scheduled] = await Promise.all([
       api.getStatus(),
       api.listProjects(),
       api.listTasks(),
       api.getTimeline(200),
       api.getSettings(),
+      api.listScheduled(),
     ]);
-    set({ status, projects, tasks, timeline, settings });
+    set({ status, projects, tasks, timeline, settings, scheduled });
   },
 
   handleEvent: (event: OrchestratorEvent) => {
@@ -97,6 +103,9 @@ export const useStore = create<StoreState>((set, get) => ({
         // Session lifecycle affects the timeline and status counters.
         get().refreshTimeline();
         get().refreshStatus();
+        break;
+      case "scheduledChanged":
+        get().refreshScheduled();
         break;
       case "log": {
         const logs = [

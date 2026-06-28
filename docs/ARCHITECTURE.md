@@ -226,6 +226,14 @@ Higher-level operations with validation/defaults, used by the Tauri commands:
 
 `CoreError` (via `thiserror`) wraps `rusqlite`, `serde_json`, and `io` errors and adds `NotFound`, `Invalid`, `AgentUnavailable`, `Other`. `Result<T> = Result<T, CoreError>`. `util::binary_available(name)` checks `PATH` (and `PATHEXT` on Windows) to detect installed agent CLIs without spawning them — feeding `AgentUsage.available`.
 
+### 2.12 `scheduled.rs` — scheduled tasks
+
+Pure parsing + next-run math for recurring jobs defined as markdown files in a project's `.orchestrator/scheduled/`. `split_front_matter` separates the YAML-ish front matter from the body; `parse_scheduled` builds a `ScheduledTask` (cron via the `cron` crate with 5→6 field normalization, or an `every:` interval via `parse_duration`); `next_run_after` computes the following fire time. The engine owns persistence (`scheduled_tasks` table), periodic discovery (`discover_all_scheduled`, on launch + every `scheduleRefreshSecs`), and firing (`fire_due_scheduled` inside the tick, which creates a normal pending task and advances the schedule; missed slots collapse to one firing).
+
+### 2.13 Agent selection and models
+
+`Engine::choose_agent` decides which agent actually runs a task: an explicit pin is honored if it's in the project's allowed set; otherwise, when `balanceAgents` is on and the project allows more than one agent, it picks the least-loaded available agent via `agent_load` (windowed cost + a small per-active-session nudge). `run_spec` resolves the model with precedence explicit-override → per-agent config → `AgentKind::default_model()` (latest Opus for Claude; the CLI's own latest for Gemini/Codex). `Project::allowed_agents` / `effective_allowed_agents` and `Task::auto_agent` / `Task::model` carry the per-entity configuration.
+
 ---
 
 ## 3. The Tauri host (`src-tauri/`)

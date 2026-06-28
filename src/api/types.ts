@@ -35,6 +35,7 @@ export interface Project {
   description: string | null;
   enabled: boolean;
   defaultAgent: AgentKind;
+  allowedAgents: AgentKind[];
   maxConcurrent: number | null;
   roadmapEnabled: boolean;
   verifyEnabled: boolean;
@@ -50,6 +51,8 @@ export interface Task {
   status: TaskStatus;
   priority: number;
   agent: AgentKind;
+  autoAgent: boolean;
+  model: string | null;
   parentId: string | null;
   dependsOn: string[];
   attempts: number;
@@ -154,7 +157,31 @@ export interface Settings {
   sessionTimeoutSecs: number;
   roadmapEnabled: boolean;
   verifyEnabled: boolean;
+  balanceAgents: boolean;
+  scheduleRefreshSecs: number;
   agents: Record<string, AgentConfig>;
+}
+
+export interface ScheduledTask {
+  id: string;
+  projectId: string;
+  path: string;
+  relPath: string;
+  title: string;
+  schedule: string;
+  scheduleKind: string;
+  scheduleDesc: string;
+  agent: AgentKind | null;
+  model: string | null;
+  priority: number;
+  enabled: boolean;
+  valid: boolean;
+  error: string | null;
+  body: string;
+  lastRun: string | null;
+  nextRun: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Inputs
@@ -171,6 +198,7 @@ export interface CreateTaskInput {
   description?: string;
   priority?: number | null;
   agent?: AgentKind | null;
+  model?: string | null;
   dependsOn?: string[];
   tags?: string[];
   maxAttempts?: number | null;
@@ -188,5 +216,6 @@ export type OrchestratorEvent =
   | { type: "sessionUpdated"; session: Session }
   | { type: "taskUpdated"; task: Task }
   | { type: "statusChanged" }
+  | { type: "scheduledChanged" }
   | { type: "usageUpdated" }
   | { type: "log"; level: string; message: string };

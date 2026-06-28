@@ -137,10 +137,11 @@ pub fn send_message(
     state: State<AppState>,
     session_id: String,
     message: String,
+    model: Option<String>,
 ) -> CmdResult<String> {
     state
         .engine
-        .send_message(&session_id, &message)
+        .send_message(&session_id, &message, model.as_deref())
         .map_err(err)
 }
 
@@ -185,4 +186,34 @@ pub fn get_timeline(state: State<AppState>, limit: Option<u32>) -> CmdResult<Vec
         .db()
         .timeline(limit.unwrap_or(200))
         .map_err(err)
+}
+
+// ---- Scheduled tasks -------------------------------------------------------
+
+#[tauri::command]
+pub fn list_scheduled(
+    state: State<AppState>,
+    project_id: Option<String>,
+) -> CmdResult<Vec<ScheduledTask>> {
+    state
+        .engine
+        .db()
+        .list_scheduled(project_id.as_deref())
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn refresh_scheduled(state: State<AppState>) -> CmdResult<u32> {
+    state.engine.refresh_scheduled().map_err(err)
+}
+
+#[tauri::command]
+pub fn set_scheduled_enabled(state: State<AppState>, id: String, enabled: bool) -> CmdResult<()> {
+    state
+        .engine
+        .db()
+        .set_scheduled_enabled(&id, enabled)
+        .map_err(err)?;
+    state.engine.request_tick();
+    Ok(())
 }

@@ -71,9 +71,46 @@ function ProjectSettings({ project }: { project: Project }) {
     setTimeout(() => setSaved(false), 1500);
   };
 
+  const AGENTS: Project["defaultAgent"][] = ["claude", "gemini", "codex"];
+  const toggleAgent = (a: Project["defaultAgent"]) => {
+    const has = draft.allowedAgents.includes(a);
+    let next = has
+      ? draft.allowedAgents.filter((x) => x !== a)
+      : [...draft.allowedAgents, a];
+    if (next.length === 0) next = [a]; // never empty
+    // Keep the default agent inside the allowed set.
+    const defaultAgent = next.includes(draft.defaultAgent) ? draft.defaultAgent : next[0];
+    setDraft({ ...draft, allowedAgents: next, defaultAgent });
+  };
+
   return (
     <div className="card p-4">
       <h3 className="mb-3 text-sm font-semibold text-neutral-200">Project settings</h3>
+      <div className="mb-4">
+        <div className="mb-1 text-xs text-neutral-400">Allowed agents</div>
+        <div className="flex gap-2">
+          {AGENTS.map((a) => {
+            const on = draft.allowedAgents.includes(a);
+            return (
+              <button
+                key={a}
+                type="button"
+                onClick={() => toggleAgent(a)}
+                className={`chip border ${
+                  on
+                    ? "border-indigo-500/50 bg-indigo-600/15 text-indigo-200"
+                    : "border-[var(--color-border)] text-neutral-500 hover:text-neutral-300"
+                }`}
+              >
+                {a}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          When more than one is enabled, unpinned tasks are load-balanced to the least-used agent.
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <label className="flex items-center justify-between text-sm text-neutral-300">
           Enabled
@@ -94,9 +131,9 @@ function ProjectSettings({ project }: { project: Project }) {
             value={draft.defaultAgent}
             onChange={(e) => setDraft({ ...draft, defaultAgent: e.target.value as Project["defaultAgent"] })}
           >
-            <option value="claude">claude</option>
-            <option value="gemini">gemini</option>
-            <option value="codex">codex</option>
+            {draft.allowedAgents.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
           </select>
         </label>
         <label className="flex items-center justify-between gap-2 text-sm text-neutral-300">

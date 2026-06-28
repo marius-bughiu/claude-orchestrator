@@ -10,6 +10,7 @@ orchestrator falls back to sensible built-in defaults when one is missing.
 | `roadmap.md`  | Prompt for the **roadmap loop** — generates new tasks when the queue empties. |
 | `verify.md`   | Prompt for the **verifier** — judges whether a finished task met its goal. |
 | `task.md`     | Preamble prepended to every task prompt for this project. |
+| `scheduled/`  | Recurring **scheduled tasks** as `*.md` files with a cron/interval in front matter. |
 
 Edit these to steer autonomous behavior. The `roadmap.md` and `verify.md` files
 each define a small JSON output contract the orchestrator parses — keep those

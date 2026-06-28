@@ -11,9 +11,11 @@ use crate::event::{EventSink, OrchestratorEvent};
 use crate::models::*;
 use crate::parse;
 use crate::runner::{self, CancelToken, RunOutcome};
+use crate::scheduled;
 use crate::util;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
@@ -82,6 +84,24 @@ impl Engine {
                     _ = tokio::time::sleep(Duration::from_secs(interval)) => {}
                     _ = engine.wake.notified() => {}
                 }
+            }
+        });
+
+        // Scheduled-task discovery loop: scan on launch, then on an interval.
+        let discoverer = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = discoverer.discover_all_scheduled() {
+                    discoverer.log("error", format!("scheduled discovery failed: {e}"));
+                }
+                discoverer.request_tick();
+                let secs = discoverer
+                    .db
+                    .get_settings()
+                    .map(|s| s.schedule_refresh_secs)
+                    .unwrap_or(300)
+                    .max(30);
+                tokio::time::sleep(Duration::from_secs(secs)).await;
             }
         });
     }
@@ -154,9 +174,19 @@ impl Engine {
 
     /// Continue a session's conversation with a new user message. Spawns a
     /// follow-up session resuming the agent's prior context.
-    pub fn send_message(self: &Arc<Self>, session_id: &str, message: &str) -> Result<String> {
+    pub fn send_message(
+        self: &Arc<Self>,
+        session_id: &str,
+        message: &str,
+        model: Option<&str>,
+    ) -> Result<String> {
         let prior = self.db.get_session(session_id)?;
         let project = self.db.get_project(&prior.project_id)?;
+        // A new model can be selected for the continued session; else reuse prior.
+        let model = model
+            .filter(|m| !m.trim().is_empty())
+            .map(String::from)
+            .or_else(|| prior.model.clone());
         let new_id = Uuid::new_v4().to_string();
         let session = Session {
             id: new_id.clone(),
@@ -166,7 +196,7 @@ impl Engine {
             kind: SessionKind::Task,
             status: SessionStatus::Pending,
             agent_session_id: None,
-            model: prior.model.clone(),
+            model: model.clone(),
             prompt: message.to_string(),
             result_text: None,
             error: None,
@@ -177,7 +207,7 @@ impl Engine {
             created_at: Utc::now(),
         };
         self.db.upsert_session(&session)?;
-        let mut spec = self.run_spec(&project, prior.agent, message);
+        let mut spec = self.run_spec(&project, prior.agent, message, model.as_deref());
         spec.resume_session_id = prior.agent_session_id.clone();
         self.clone().spawn_session_job(session, spec, None);
         Ok(new_id)
@@ -190,6 +220,12 @@ impl Engine {
         if !settings.running {
             return Ok(());
         }
+
+        // Fire any scheduled jobs that are due (creates pending tasks).
+        if let Err(e) = self.fire_due_scheduled() {
+            self.log("error", format!("scheduled firing failed: {e}"));
+        }
+
         let global_max = settings.max_concurrent.max(1);
         let mut active = self.db.count_active_sessions()?;
         if active >= global_max {
@@ -245,6 +281,122 @@ impl Engine {
             .any(|s| s.project_id == project_id && s.kind == SessionKind::Roadmap))
     }
 
+    // ---- Scheduled tasks ----------------------------------------------------
+
+    /// Re-scan every known project for scheduled-task markdown files and sync the
+    /// database. Returns the total number of scheduled tasks discovered.
+    pub fn discover_all_scheduled(&self) -> Result<u32> {
+        let projects = self.db.list_projects()?;
+        let mut total = 0usize;
+        for project in projects {
+            match self.discover_scheduled_for_project(&project) {
+                Ok(n) => total += n,
+                Err(e) => self.log(
+                    "warn",
+                    format!("scheduled discovery failed for {}: {e}", project.name),
+                ),
+            }
+        }
+        self.emit(OrchestratorEvent::ScheduledChanged);
+        Ok(total as u32)
+    }
+
+    /// Manually refresh scheduled tasks and immediately evaluate firing.
+    pub fn refresh_scheduled(self: &Arc<Self>) -> Result<u32> {
+        let n = self.discover_all_scheduled()?;
+        self.request_tick();
+        Ok(n)
+    }
+
+    fn discover_scheduled_for_project(&self, project: &Project) -> Result<usize> {
+        let dir = Path::new(&project.path).join(scheduled::SCHEDULED_DIR);
+        let now = Utc::now();
+        let mut keep = Vec::new();
+        if dir.is_dir() {
+            for entry in std::fs::read_dir(&dir)?.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                    continue;
+                }
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                let rel = format!("{}/{}", scheduled::SCHEDULED_DIR, file_name);
+                let mut st = scheduled::parse_scheduled(&project.id, &path, &rel, &content, now);
+                // Preserve run history when the schedule itself is unchanged.
+                if let Some(existing) = self.db.get_scheduled(&st.id)? {
+                    st.created_at = existing.created_at;
+                    if existing.schedule == st.schedule
+                        && existing.schedule_kind == st.schedule_kind
+                    {
+                        st.last_run = existing.last_run;
+                        st.next_run = existing.next_run.or(st.next_run);
+                    }
+                }
+                self.db.upsert_scheduled(&st)?;
+                keep.push(st.id.clone());
+            }
+        }
+        self.db.prune_scheduled(&project.id, &keep)?;
+        Ok(keep.len())
+    }
+
+    /// Create tasks for any scheduled jobs whose time has come, advancing each to
+    /// its next slot. Missed slots collapse to a single firing.
+    fn fire_due_scheduled(&self) -> Result<u32> {
+        let now = Utc::now();
+        let mut fired = 0;
+        for st in self.db.due_scheduled(now)? {
+            // Advance the schedule first so we never refire the same slot.
+            let next = scheduled::next_run_after(&st.schedule_kind, &st.schedule, now);
+            self.db.set_scheduled_run(&st.id, now, next)?;
+
+            let Ok(project) = self.db.get_project(&st.project_id) else {
+                continue;
+            };
+            if !project.enabled {
+                continue;
+            }
+
+            let requested = st.agent.filter(|a| project.allows(*a));
+            let (agent, auto_agent) = match requested {
+                Some(a) => (a, false),
+                None => (project.default_agent, true),
+            };
+            let task = Task {
+                id: Uuid::new_v4().to_string(),
+                project_id: project.id.clone(),
+                title: st.title.clone(),
+                description: st.body.clone(),
+                status: TaskStatus::Pending,
+                priority: st.priority,
+                agent,
+                auto_agent,
+                model: st.model.clone(),
+                parent_id: None,
+                depends_on: vec![],
+                attempts: 0,
+                max_attempts: 3,
+                tags: vec!["scheduled".into()],
+                auto_generated: true,
+                created_at: now,
+                updated_at: now,
+            };
+            self.db.upsert_task(&task)?;
+            self.emit(OrchestratorEvent::TaskUpdated { task });
+            self.log(
+                "info",
+                format!("scheduled task '{}' fired for {}", st.title, project.name),
+            );
+            fired += 1;
+        }
+        if fired > 0 {
+            self.emit(OrchestratorEvent::ScheduledChanged);
+        }
+        Ok(fired)
+    }
+
     /// Pick the highest-priority schedulable task whose dependencies are met and
     /// whose attempts are not exhausted.
     fn pick_task(&self, project_id: &str) -> Result<Option<Task>> {
@@ -272,17 +424,19 @@ impl Engine {
 
     /// Synchronously mark a task as running and spawn its execution job.
     fn start_task(self: &Arc<Self>, project: &Project, mut task: Task) -> Result<()> {
+        let settings = self.db.get_settings()?;
+        let agent = self.choose_agent(project, &task, &settings);
+
         task.status = TaskStatus::Running;
         task.updated_at = Utc::now();
         self.db.upsert_task(&task)?;
         self.emit(OrchestratorEvent::TaskUpdated { task: task.clone() });
 
         let prompt = self.task_prompt(project, &task);
-        let session =
-            self.new_session(project, Some(&task), task.agent, SessionKind::Task, &prompt);
+        let session = self.new_session(project, Some(&task), agent, SessionKind::Task, &prompt);
         self.db.upsert_session(&session)?;
 
-        let spec = self.run_spec(project, task.agent, &prompt);
+        let spec = self.run_spec(project, agent, &prompt, task.model.as_deref());
         self.clone().spawn_session_job(session, spec, Some(task));
         Ok(())
     }
@@ -296,7 +450,7 @@ impl Engine {
             "info",
             format!("roadmap loop starting for {}", project.name),
         );
-        let spec = self.run_spec(project, agent, &prompt);
+        let spec = self.run_spec(project, agent, &prompt, None);
         self.clone().spawn_session_job(session, spec, None);
         Ok(())
     }
@@ -331,14 +485,92 @@ impl Engine {
         }
     }
 
-    fn run_spec(&self, project: &Project, agent: AgentKind, prompt: &str) -> RunSpec {
+    fn run_spec(
+        &self,
+        project: &Project,
+        agent: AgentKind,
+        prompt: &str,
+        model_override: Option<&str>,
+    ) -> RunSpec {
         let settings = self.db.get_settings().unwrap_or_default();
         let cfg = settings.agent_config(agent);
         let mut spec = RunSpec::new(prompt, &project.path);
-        spec.model = cfg.model.clone();
+        // Model precedence: explicit override > per-agent config > agent default.
+        spec.model = model_override
+            .map(|m| m.to_string())
+            .or_else(|| cfg.model.clone())
+            .or_else(|| agent.default_model().map(String::from));
         spec.permission_mode = settings.permission_mode;
         spec.extra_args = cfg.extra_args.clone();
         spec
+    }
+
+    /// Decide which agent actually runs a task. Honors an explicit pin, otherwise
+    /// (when balancing is on) picks the least-used *available* agent among the
+    /// project's allowed set so usage stays even across Claude/Gemini/Codex.
+    fn choose_agent(&self, project: &Project, task: &Task, settings: &Settings) -> AgentKind {
+        let allowed = project.effective_allowed_agents();
+
+        // Explicit pin: use it if allowed, else fall through to balancing/fallback.
+        if !task.auto_agent && allowed.contains(&task.agent) {
+            return task.agent;
+        }
+
+        let now = Utc::now();
+        let candidates: Vec<AgentKind> = allowed
+            .iter()
+            .copied()
+            .filter(|a| {
+                let cfg = settings.agent_config(*a);
+                if !cfg.enabled {
+                    return false;
+                }
+                let binary = cfg
+                    .binary
+                    .clone()
+                    .unwrap_or_else(|| agents::adapter_for(*a).default_binary().to_string());
+                util::binary_available(&binary)
+            })
+            .collect();
+
+        let pool = if candidates.is_empty() {
+            allowed.clone()
+        } else {
+            candidates
+        };
+
+        if !settings.balance_agents || pool.len() == 1 {
+            // No balancing: prefer the task's agent if in pool, else the default.
+            if pool.contains(&task.agent) {
+                return task.agent;
+            }
+            return pool.first().copied().unwrap_or(project.default_agent);
+        }
+
+        // Pick the agent with the lowest windowed cost, tie-broken by active sessions.
+        pool.into_iter()
+            .min_by(|a, b| {
+                let load_a = self.agent_load(*a, settings, now);
+                let load_b = self.agent_load(*b, settings, now);
+                load_a
+                    .partial_cmp(&load_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(project.default_agent)
+    }
+
+    /// A scalar "load" for an agent within its window: windowed cost plus a small
+    /// nudge per active session so concurrent work spreads out too.
+    fn agent_load(&self, agent: AgentKind, settings: &Settings, now: DateTime<Utc>) -> f64 {
+        let cfg = settings.agent_config(agent);
+        let window_start = now - chrono::Duration::hours(cfg.window_hours.max(1) as i64);
+        let cost = self
+            .db
+            .usage_for_agent(agent, Some(window_start))
+            .map(|u| u.total_cost_usd)
+            .unwrap_or(0.0);
+        let active = self.db.count_active_sessions_for_agent(agent).unwrap_or(0) as f64;
+        cost + active * 0.001
     }
 
     fn task_prompt(&self, project: &Project, task: &Task) -> String {
@@ -597,7 +829,7 @@ impl Engine {
             &prompt,
         );
         self.db.upsert_session(&session)?;
-        let spec = self.run_spec(project, project.default_agent, &prompt);
+        let spec = self.run_spec(project, project.default_agent, &prompt, None);
         let outcome = self.run_session(&session, &spec).await?;
         Ok(outcome
             .result_text
@@ -619,6 +851,13 @@ impl Engine {
         let now = Utc::now();
         let mut created = 0;
         for spec in specs {
+            // Respect an explicitly-requested agent only if the project allows it;
+            // otherwise leave it auto so the scheduler load-balances.
+            let requested = spec.agent.as_deref().and_then(AgentKind::from_str);
+            let (agent, auto_agent) = match requested {
+                Some(a) if project.allows(a) => (a, false),
+                _ => (project.default_agent, true),
+            };
             let task = Task {
                 id: Uuid::new_v4().to_string(),
                 project_id: project.id.clone(),
@@ -626,7 +865,9 @@ impl Engine {
                 description: spec.description.clone(),
                 status: TaskStatus::Pending,
                 priority: spec.priority_or_default(),
-                agent: spec.agent_kind(project.default_agent),
+                agent,
+                auto_agent,
+                model: None,
                 parent_id: None,
                 depends_on: vec![],
                 attempts: 0,
@@ -692,5 +933,140 @@ fn describe_event(
         ),
         Error { message } => (Some(message.clone()), None),
         Raw { value } => (None, Some(value.clone())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::NullSink;
+
+    fn engine() -> Arc<Engine> {
+        Engine::new(Db::open_in_memory().unwrap(), Arc::new(NullSink))
+    }
+
+    fn mk_project(eng: &Engine, path: &str, allowed: Vec<AgentKind>) -> Project {
+        let now = Utc::now();
+        let p = Project {
+            id: Uuid::new_v4().to_string(),
+            name: "p".into(),
+            path: path.to_string(),
+            description: None,
+            enabled: true,
+            default_agent: AgentKind::Claude,
+            allowed_agents: allowed,
+            max_concurrent: None,
+            roadmap_enabled: false,
+            verify_enabled: false,
+            created_at: now,
+            updated_at: now,
+        };
+        eng.db.upsert_project(&p).unwrap();
+        p
+    }
+
+    fn mk_task(project_id: &str, agent: AgentKind, auto_agent: bool) -> Task {
+        let now = Utc::now();
+        Task {
+            id: Uuid::new_v4().to_string(),
+            project_id: project_id.into(),
+            title: "t".into(),
+            description: "do".into(),
+            status: TaskStatus::Pending,
+            priority: 50,
+            agent,
+            auto_agent,
+            model: None,
+            parent_id: None,
+            depends_on: vec![],
+            attempts: 0,
+            max_attempts: 3,
+            tags: vec![],
+            auto_generated: false,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn explicit_pin_is_respected_when_allowed() {
+        let eng = engine();
+        let tmp = std::env::temp_dir();
+        let p = mk_project(
+            &eng,
+            &tmp.to_string_lossy(),
+            vec![AgentKind::Claude, AgentKind::Gemini],
+        );
+        let settings = eng.db.get_settings().unwrap();
+        let task = mk_task(&p.id, AgentKind::Gemini, false);
+        assert_eq!(eng.choose_agent(&p, &task, &settings), AgentKind::Gemini);
+    }
+
+    #[test]
+    fn disallowed_pin_falls_back_into_allowed_set() {
+        let eng = engine();
+        let tmp = std::env::temp_dir();
+        let p = mk_project(&eng, &tmp.to_string_lossy(), vec![AgentKind::Claude]);
+        let settings = eng.db.get_settings().unwrap();
+        // Task pins Gemini, but the project only allows Claude.
+        let task = mk_task(&p.id, AgentKind::Gemini, false);
+        let chosen = eng.choose_agent(&p, &task, &settings);
+        assert!(p.allows(chosen));
+        assert_ne!(chosen, AgentKind::Gemini);
+    }
+
+    #[test]
+    fn scheduled_discovery_and_firing() {
+        let eng = engine();
+        let dir = std::env::temp_dir().join(format!("orch-sched-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join(".orchestrator/scheduled")).unwrap();
+        std::fs::write(
+            dir.join(".orchestrator/scheduled/job.md"),
+            "---\nevery: 1h\ntitle: Nightly job\n---\nDo the scheduled thing.",
+        )
+        .unwrap();
+
+        let p = mk_project(&eng, &dir.to_string_lossy(), vec![AgentKind::Claude]);
+        assert_eq!(eng.discover_all_scheduled().unwrap(), 1);
+
+        let sched = eng.db.list_scheduled(Some(&p.id)).unwrap();
+        assert_eq!(sched.len(), 1);
+        assert!(sched[0].valid);
+        assert_eq!(sched[0].title, "Nightly job");
+        assert!(sched[0].next_run.is_some());
+
+        // Force it due, then fire.
+        let past = Utc::now() - chrono::Duration::minutes(1);
+        eng.db
+            .set_scheduled_run(&sched[0].id, past, Some(past))
+            .unwrap();
+        assert_eq!(eng.fire_due_scheduled().unwrap(), 1);
+
+        let tasks = eng.db.list_tasks(Some(&p.id)).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].description.trim(), "Do the scheduled thing.");
+        assert!(tasks[0].tags.contains(&"scheduled".to_string()));
+
+        // Next run advanced into the future; no longer due.
+        let after = eng.db.get_scheduled(&sched[0].id).unwrap().unwrap();
+        assert!(after.next_run.unwrap() > Utc::now());
+        assert_eq!(eng.fire_due_scheduled().unwrap(), 0);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn removed_files_are_pruned() {
+        let eng = engine();
+        let dir = std::env::temp_dir().join(format!("orch-sched-{}", Uuid::new_v4()));
+        let sdir = dir.join(".orchestrator/scheduled");
+        std::fs::create_dir_all(&sdir).unwrap();
+        std::fs::write(sdir.join("a.md"), "---\nevery: 1h\n---\nbody").unwrap();
+        let p = mk_project(&eng, &dir.to_string_lossy(), vec![AgentKind::Claude]);
+        assert_eq!(eng.discover_all_scheduled().unwrap(), 1);
+        std::fs::remove_file(sdir.join("a.md")).unwrap();
+        assert_eq!(eng.discover_all_scheduled().unwrap(), 0);
+        assert_eq!(eng.db.list_scheduled(Some(&p.id)).unwrap().len(), 0);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

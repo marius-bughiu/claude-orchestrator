@@ -36,6 +36,17 @@ impl AgentKind {
             _ => None,
         }
     }
+
+    /// The default model alias used when nothing more specific is configured.
+    /// Claude defaults to the latest Opus; the other CLIs default to their own
+    /// latest model (represented as `None`, i.e. no `--model` flag).
+    pub fn default_model(&self) -> Option<&'static str> {
+        match self {
+            AgentKind::Claude => Some("opus"),
+            AgentKind::Gemini => None,
+            AgentKind::Codex => None,
+        }
+    }
 }
 
 /// Lifecycle of a task as it moves through the scheduler.
@@ -182,6 +193,9 @@ pub struct Project {
     pub enabled: bool,
     /// Default agent for tasks in this project that don't specify one.
     pub default_agent: AgentKind,
+    /// The set of agents this project is permitted to use. Defaults to Claude
+    /// only; the scheduler will never dispatch to an agent outside this set.
+    pub allowed_agents: Vec<AgentKind>,
     /// Per-project cap on concurrent sessions (None = use global setting).
     pub max_concurrent: Option<u32>,
     /// Whether the roadmap loop may auto-generate tasks when the queue empties.
@@ -190,6 +204,25 @@ pub struct Project {
     pub verify_enabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl Project {
+    /// The agents this project may use, guaranteed non-empty and always
+    /// including the default agent (falls back to `[default_agent]`).
+    pub fn effective_allowed_agents(&self) -> Vec<AgentKind> {
+        let mut agents: Vec<AgentKind> = self.allowed_agents.clone();
+        if !agents.contains(&self.default_agent) {
+            agents.insert(0, self.default_agent);
+        }
+        if agents.is_empty() {
+            agents.push(self.default_agent);
+        }
+        agents
+    }
+
+    pub fn allows(&self, agent: AgentKind) -> bool {
+        self.effective_allowed_agents().contains(&agent)
+    }
 }
 
 /// A unit of work for a project.
@@ -204,7 +237,15 @@ pub struct Task {
     pub status: TaskStatus,
     /// Higher runs first. Convention: 0 low, 50 normal, 100 high, 200 urgent.
     pub priority: i64,
+    /// Preferred agent. When `auto_agent` is true this is only a fallback — the
+    /// scheduler may pick a different allowed agent to balance load.
     pub agent: AgentKind,
+    /// When true, the agent was not explicitly pinned and the scheduler is free
+    /// to load-balance across the project's allowed agents.
+    pub auto_agent: bool,
+    /// Model override for sessions of this task. `None` = use the agent default
+    /// (latest Opus for Claude; the CLI's own latest for others).
+    pub model: Option<String>,
     /// Task that spawned this one (roadmap loop, decomposition).
     pub parent_id: Option<String>,
     /// Task ids that must be Completed before this is schedulable.
@@ -340,4 +381,41 @@ pub struct TimelineItem {
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub cost_usd: f64,
+}
+
+/// A scheduled task discovered from a markdown file in a project repo
+/// (`.orchestrator/scheduled/*.md`). The schedule lives in the file's front
+/// matter; the body is the task prompt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledTask {
+    /// Stable id derived from project id + relative file path.
+    pub id: String,
+    pub project_id: String,
+    /// Absolute path to the markdown file.
+    pub path: String,
+    /// Path relative to the project root (for display).
+    pub rel_path: String,
+    pub title: String,
+    /// Raw schedule expression as written in front matter.
+    pub schedule: String,
+    /// "cron" or "interval".
+    pub schedule_kind: String,
+    /// Human-readable schedule summary.
+    pub schedule_desc: String,
+    /// Agent override from front matter (None = project default / balanced).
+    pub agent: Option<AgentKind>,
+    /// Model override from front matter.
+    pub model: Option<String>,
+    pub priority: i64,
+    pub enabled: bool,
+    /// Whether the file parsed successfully; if false, `error` explains why.
+    pub valid: bool,
+    pub error: Option<String>,
+    /// The task prompt (markdown body after front matter).
+    pub body: String,
+    pub last_run: Option<DateTime<Utc>>,
+    pub next_run: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
