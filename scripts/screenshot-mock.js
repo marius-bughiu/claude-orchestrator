@@ -126,6 +126,14 @@ window.__TAURI_INTERNALS__ = {
       case "get_session_events": return Promise.resolve(m.sessionEvents);
       case "list_sessions": return Promise.resolve([m.session]);
       case "project_conventions": return Promise.resolve(true);
+      case "project_git_status": {
+        const map = {
+          p1: { available: true, branch: "main", dirty: true, ahead: 2, behind: 0, lastCommit: "a1b2c3d", lastSubject: "wire up dashboards" },
+          p2: { available: true, branch: "feat/keyboard-nav", dirty: false, ahead: 0, behind: 1, lastCommit: "e4f5a6b", lastSubject: "add shortcuts" },
+          p3: { available: true, branch: "main", dirty: false, ahead: 0, behind: 0, lastCommit: "0099aa1", lastSubject: "initial" },
+        };
+        return Promise.resolve(map[args.id] || { available: false, branch: null, dirty: false, ahead: 0, behind: 0, lastCommit: null, lastSubject: null });
+      }
       default:
         // event listen/unlisten and any writes — no-op.
         return Promise.resolve(cmd.startsWith("plugin:event") ? 0 : null);

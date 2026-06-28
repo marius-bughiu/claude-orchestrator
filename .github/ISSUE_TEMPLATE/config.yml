@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/marius-bughiu/claude-orchestrator/tree/main/docs
+    about: Architecture, conventions, and release/auto-update setup.

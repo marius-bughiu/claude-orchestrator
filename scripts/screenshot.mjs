@@ -48,5 +48,19 @@ async function capture(theme, names) {
 await capture("dark");
 await capture("light", ["dashboard", "projects"]);
 
+// Command palette (Cmd/Ctrl+K).
+{
+  const ctx = await browser.newContext({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark" });
+  await ctx.addInitScript(mock);
+  const page = await ctx.newPage();
+  await page.goto(base + "/#/dashboard", { waitUntil: "networkidle" });
+  await page.waitForTimeout(600);
+  await page.keyboard.press("Control+k");
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: join(outDir, "command-palette.png") });
+  console.log("shot: command-palette");
+  await ctx.close();
+}
+
 await browser.close();
 console.log("done");
