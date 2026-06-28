@@ -248,6 +248,12 @@ export type OrchestratorEvent =
       taskId: string | null;
       event: SessionEvent;
     }
+  | {
+      type: "sessionDelta";
+      sessionId: string;
+      kind: string;
+      text: string;
+    }
   | { type: "sessionUpdated"; session: Session }
   | { type: "taskUpdated"; task: Task }
   | { type: "statusChanged" }

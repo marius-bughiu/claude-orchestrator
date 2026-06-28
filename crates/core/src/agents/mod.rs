@@ -39,6 +39,11 @@ pub struct RunSpec {
     pub mcp_config: Option<PathBuf>,
     /// Extra args appended verbatim.
     pub extra_args: Vec<String>,
+    /// Live mode: stream partial-message token deltas AND accept follow-up user
+    /// messages on stdin mid-run (`--include-partial-messages --input-format
+    /// stream-json`). When set, the prompt is delivered via the input channel
+    /// rather than as a positional argument.
+    pub live: bool,
 }
 
 impl RunSpec {
@@ -54,6 +59,7 @@ impl RunSpec {
             add_dirs: Vec::new(),
             mcp_config: None,
             extra_args: Vec::new(),
+            live: false,
         }
     }
 }
@@ -79,6 +85,10 @@ pub enum AgentEvent {
     Assistant { text: String },
     /// Extended-thinking / reasoning text.
     Thinking { text: String },
+    /// A partial assistant text token (live streaming); not persisted.
+    TextDelta { text: String },
+    /// A partial thinking token (live streaming); not persisted.
+    ThinkingDelta { text: String },
     /// The agent invoked a tool.
     ToolUse {
         name: String,
@@ -105,12 +115,22 @@ impl AgentEvent {
             AgentEvent::Init { .. } => "init",
             AgentEvent::Assistant { .. } => "assistant",
             AgentEvent::Thinking { .. } => "thinking",
+            AgentEvent::TextDelta { .. } => "text_delta",
+            AgentEvent::ThinkingDelta { .. } => "thinking_delta",
             AgentEvent::ToolUse { .. } => "tool_use",
             AgentEvent::ToolResult { .. } => "tool_result",
             AgentEvent::Result { .. } => "result",
             AgentEvent::Error { .. } => "error",
             AgentEvent::Raw { .. } => "raw",
         }
+    }
+
+    /// True for ephemeral streaming token deltas (live-only, not persisted).
+    pub fn is_delta(&self) -> bool {
+        matches!(
+            self,
+            AgentEvent::TextDelta { .. } | AgentEvent::ThinkingDelta { .. }
+        )
     }
 }
 
@@ -126,6 +146,16 @@ pub trait AgentAdapter: Send + Sync {
 
     /// Parse a single line of stdout into zero or more normalized events.
     fn parse_line(&self, line: &str) -> Vec<AgentEvent>;
+
+    /// Format a follow-up user message for live stdin input (stream-json input).
+    /// Default is the Anthropic/Claude shape; live mode is Claude-only for now.
+    fn format_input_message(&self, text: &str) -> String {
+        let msg = serde_json::json!({
+            "type": "user",
+            "message": { "role": "user", "content": [{ "type": "text", "text": text }] }
+        });
+        format!("{msg}\n")
+    }
 }
 
 /// Construct the adapter for a given agent kind.

@@ -92,6 +92,11 @@ pub struct Settings {
     /// When true, tasks that don't pin an agent are dispatched to the least-used
     /// available agent among the project's allowed set, to even out usage.
     pub balance_agents: bool,
+    /// When true, task sessions run in live mode: token-by-token streaming and
+    /// mid-run message injection (Claude only). Disable to fall back to one-shot
+    /// sessions.
+    #[serde(default = "default_true")]
+    pub live_streaming: bool,
     /// How often to re-scan projects for scheduled-task markdown files, seconds.
     pub schedule_refresh_secs: u64,
     /// Per-agent configuration, keyed by agent name.
@@ -114,6 +119,7 @@ impl Default for Settings {
             roadmap_enabled: true,
             verify_enabled: true,
             balance_agents: true,
+            live_streaming: true,
             schedule_refresh_secs: 300,
             agents,
         }

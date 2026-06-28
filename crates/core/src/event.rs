@@ -19,6 +19,13 @@ pub enum OrchestratorEvent {
         task_id: Option<String>,
         event: SessionEvent,
     },
+    /// An ephemeral token delta for the live view (not persisted). `kind` is
+    /// "assistant" or "thinking".
+    SessionDelta {
+        session_id: String,
+        kind: String,
+        text: String,
+    },
     /// A session's status or fields changed.
     SessionUpdated { session: Session },
     /// A task's status or fields changed.

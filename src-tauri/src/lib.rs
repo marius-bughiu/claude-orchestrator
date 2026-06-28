@@ -75,6 +75,7 @@ pub fn run() {
             commands::get_session,
             commands::get_session_events,
             commands::send_message,
+            commands::inject_message,
             commands::stop_session,
             commands::get_status,
             commands::set_running,

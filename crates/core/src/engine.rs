@@ -27,6 +27,8 @@ pub struct Engine {
     sink: Arc<dyn EventSink>,
     /// session id -> cancel token for currently running sessions.
     running: Arc<Mutex<HashMap<String, CancelToken>>>,
+    /// session id -> stdin sender for live sessions accepting injected messages.
+    inputs: Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<String>>>>,
     wake: Arc<Notify>,
     /// When set, the scheduler stops allocating new work (draining for an update).
     draining: Arc<std::sync::atomic::AtomicBool>,
@@ -38,6 +40,7 @@ impl Engine {
             db,
             sink,
             running: Arc::new(Mutex::new(HashMap::new())),
+            inputs: Arc::new(Mutex::new(HashMap::new())),
             wake: Arc::new(Notify::new()),
             draining: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
@@ -278,8 +281,45 @@ impl Engine {
         self.db.upsert_session(&session)?;
         let mut spec = self.run_spec(&project, prior.agent, message, model.as_deref());
         spec.resume_session_id = prior.agent_session_id.clone();
-        self.clone().spawn_session_job(session, spec, None);
+        self.clone().spawn_session_job(session, spec, None, false);
         Ok(new_id)
+    }
+
+    /// Send a message to a session. If the session is live (running with an open
+    /// input channel), the message is injected mid-run and the same session id is
+    /// returned. Otherwise the conversation is resumed in a new session whose id
+    /// is returned. The UI navigates to the returned id.
+    pub fn inject_message(
+        self: &Arc<Self>,
+        session_id: &str,
+        message: &str,
+        model: Option<&str>,
+    ) -> Result<String> {
+        let sender = self.inputs.lock().unwrap().get(session_id).cloned();
+        if let Some(tx) = sender {
+            if tx.send(message.to_string()).is_ok() {
+                // Record the injected user message so it shows in the transcript.
+                if let Ok(stored) = self.db.insert_event(
+                    session_id,
+                    "user_message",
+                    Some(message),
+                    None,
+                    Utc::now(),
+                ) {
+                    if let Ok(s) = self.db.get_session(session_id) {
+                        self.emit(OrchestratorEvent::SessionEvent {
+                            session_id: session_id.to_string(),
+                            project_id: s.project_id,
+                            task_id: s.task_id,
+                            event: stored,
+                        });
+                    }
+                }
+                return Ok(session_id.to_string());
+            }
+        }
+        // Session has finished: resume as a new follow-up session.
+        self.send_message(session_id, message, model)
     }
 
     // ---- Scheduling ---------------------------------------------------------
@@ -556,7 +596,8 @@ impl Engine {
         self.db.upsert_session(&session)?;
 
         let spec = self.run_spec(project, agent, &prompt, task.model.as_deref());
-        self.clone().spawn_session_job(session, spec, Some(task));
+        self.clone()
+            .spawn_session_job(session, spec, Some(task), settings.live_streaming);
         Ok(())
     }
 
@@ -570,7 +611,7 @@ impl Engine {
             format!("roadmap loop starting for {}", project.name),
         );
         let spec = self.run_spec(project, agent, &prompt, None);
-        self.clone().spawn_session_job(session, spec, None);
+        self.clone().spawn_session_job(session, spec, None, false);
         Ok(())
     }
 
@@ -705,9 +746,15 @@ impl Engine {
 
     /// Spawn the async job that runs a session to completion, persists/streams
     /// its events, records usage, and (for task sessions) verifies the result.
-    fn spawn_session_job(self: Arc<Self>, session: Session, spec: RunSpec, task: Option<Task>) {
+    fn spawn_session_job(
+        self: Arc<Self>,
+        session: Session,
+        spec: RunSpec,
+        task: Option<Task>,
+        live: bool,
+    ) {
         tokio::spawn(async move {
-            let outcome = self.run_session(&session, &spec).await;
+            let outcome = self.run_session(&session, &spec, live).await;
             match outcome {
                 Ok(outcome) => {
                     if let Some(task) = task {
@@ -735,8 +782,14 @@ impl Engine {
     }
 
     /// Drive a single agent invocation: stream + persist events, finalize the
-    /// session row, and record usage. Returns the run outcome.
-    async fn run_session(&self, session: &Session, spec: &RunSpec) -> Result<RunOutcome> {
+    /// session row, and record usage. In `live` mode, partial token deltas stream
+    /// to the UI and a stdin channel is registered for mid-run message injection.
+    async fn run_session(
+        &self,
+        session: &Session,
+        spec: &RunSpec,
+        live: bool,
+    ) -> Result<RunOutcome> {
         let cancel = CancelToken::new();
         self.running
             .lock()
@@ -765,32 +818,76 @@ impl Engine {
             secs => Some(Duration::from_secs(secs)),
         };
 
+        // Build the (possibly live) spec + input channel.
+        let mut spec = spec.clone();
+        let input_rx = if live {
+            spec.live = true;
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            // Deliver the initial prompt as the first stdin message.
+            let _ = tx.send(spec.prompt.clone());
+            self.inputs.lock().unwrap().insert(session.id.clone(), tx);
+            Some(rx)
+        } else {
+            None
+        };
+
         let db = self.db.clone();
         let sink = self.sink.clone();
+        let inputs = self.inputs.clone();
         let sid = session.id.clone();
         let project_id = session.project_id.clone();
         let task_id = session.task_id.clone();
 
-        let result = runner::run_agent(adapter.as_ref(), &binary, spec, cancel, timeout, |event| {
-            let (text, data) = describe_event(event);
-            if let Ok(stored) = db.insert_event(
-                &sid,
-                event.kind(),
-                text.as_deref(),
-                data.as_ref(),
-                Utc::now(),
-            ) {
-                sink.emit(OrchestratorEvent::SessionEvent {
-                    session_id: sid.clone(),
-                    project_id: project_id.clone(),
-                    task_id: task_id.clone(),
-                    event: stored,
-                });
-            }
-        })
+        let result = runner::run_agent(
+            adapter.as_ref(),
+            &binary,
+            &spec,
+            cancel,
+            timeout,
+            input_rx,
+            |event| {
+                // Ephemeral token deltas: stream live, do not persist.
+                if event.is_delta() {
+                    let (kind, text) = match event {
+                        agents::AgentEvent::TextDelta { text } => ("assistant", text.clone()),
+                        agents::AgentEvent::ThinkingDelta { text } => ("thinking", text.clone()),
+                        _ => return,
+                    };
+                    sink.emit(OrchestratorEvent::SessionDelta {
+                        session_id: sid.clone(),
+                        kind: kind.to_string(),
+                        text,
+                    });
+                    return;
+                }
+
+                // A final result means the turn is done: close the input channel
+                // so the agent receives EOF and exits.
+                if matches!(event, agents::AgentEvent::Result { .. }) {
+                    inputs.lock().unwrap().remove(&sid);
+                }
+
+                let (text, data) = describe_event(event);
+                if let Ok(stored) = db.insert_event(
+                    &sid,
+                    event.kind(),
+                    text.as_deref(),
+                    data.as_ref(),
+                    Utc::now(),
+                ) {
+                    sink.emit(OrchestratorEvent::SessionEvent {
+                        session_id: sid.clone(),
+                        project_id: project_id.clone(),
+                        task_id: task_id.clone(),
+                        event: stored,
+                    });
+                }
+            },
+        )
         .await;
 
         self.running.lock().unwrap().remove(&session.id);
+        self.inputs.lock().unwrap().remove(&session.id);
 
         let outcome = result?;
         self.finalize_session(session, &outcome)?;
@@ -949,7 +1046,7 @@ impl Engine {
         );
         self.db.upsert_session(&session)?;
         let spec = self.run_spec(project, project.default_agent, &prompt, None);
-        let outcome = self.run_session(&session, &spec).await?;
+        let outcome = self.run_session(&session, &spec, false).await?;
         Ok(outcome
             .result_text
             .as_deref()
@@ -1034,6 +1131,8 @@ fn describe_event(
         ),
         Assistant { text } => (Some(text.clone()), None),
         Thinking { text } => (Some(text.clone()), None),
+        // Deltas are streamed live and never persisted, but keep the match total.
+        TextDelta { text } | ThinkingDelta { text } => (Some(text.clone()), None),
         ToolUse { name, input } => (
             Some(name.clone()),
             Some(serde_json::json!({ "name": name, "input": input })),

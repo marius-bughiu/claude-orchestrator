@@ -39,6 +39,13 @@ impl AgentAdapter for ClaudeAdapter {
         // stream-json + --print requires --verbose to emit per-event lines.
         args.push("--verbose".into());
 
+        if spec.live {
+            // Token-by-token deltas and accept follow-up user messages on stdin.
+            args.push("--include-partial-messages".into());
+            args.push("--input-format".into());
+            args.push("stream-json".into());
+        }
+
         if let Some(model) = &spec.model {
             args.push("--model".into());
             args.push(model.clone());
@@ -79,8 +86,11 @@ impl AgentAdapter for ClaudeAdapter {
 
         args.extend(spec.extra_args.iter().cloned());
 
-        // Prompt is the trailing positional argument.
-        args.push(spec.prompt.clone());
+        // In live mode the prompt is delivered as the first stdin message; in
+        // one-shot mode it is the trailing positional argument.
+        if !spec.live {
+            args.push(spec.prompt.clone());
+        }
 
         Invocation {
             program: binary.to_string(),
@@ -138,10 +148,48 @@ impl AgentAdapter for ClaudeAdapter {
                     usage: parse_usage(&value),
                 }]
             }
-            // Partial streaming deltas (only with --include-partial-messages).
-            "stream_event" => Vec::new(),
+            // Partial streaming deltas (with --include-partial-messages). We emit
+            // text/thinking token deltas for the live view; the consolidated
+            // `assistant` message still arrives separately and is what we persist.
+            "stream_event" => parse_stream_event(&value),
             _ => vec![AgentEvent::Raw { value }],
         }
+    }
+}
+
+/// Parse a `stream_event` (wrapped SSE delta) into token-delta events.
+fn parse_stream_event(value: &Value) -> Vec<AgentEvent> {
+    let Some(event) = value.get("event") else {
+        return Vec::new();
+    };
+    if event.get("type").and_then(Value::as_str) != Some("content_block_delta") {
+        return Vec::new();
+    }
+    let Some(delta) = event.get("delta") else {
+        return Vec::new();
+    };
+    match delta.get("type").and_then(Value::as_str) {
+        Some("text_delta") => delta
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|t| !t.is_empty())
+            .map(|t| {
+                vec![AgentEvent::TextDelta {
+                    text: t.to_string(),
+                }]
+            })
+            .unwrap_or_default(),
+        Some("thinking_delta") => delta
+            .get("thinking")
+            .and_then(Value::as_str)
+            .filter(|t| !t.is_empty())
+            .map(|t| {
+                vec![AgentEvent::ThinkingDelta {
+                    text: t.to_string(),
+                }]
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
     }
 }
 
@@ -361,5 +409,36 @@ mod tests {
     fn non_json_line_becomes_raw() {
         let evs = ClaudeAdapter.parse_line("not json at all");
         assert!(matches!(evs[0], AgentEvent::Raw { .. }));
+    }
+
+    #[test]
+    fn live_invocation_uses_stdin_input_and_partials() {
+        let mut s = spec();
+        s.live = true;
+        let inv = ClaudeAdapter.build_invocation(&s, "claude");
+        assert!(inv.args.contains(&"--include-partial-messages".to_string()));
+        assert!(inv
+            .args
+            .windows(2)
+            .any(|w| w == ["--input-format", "stream-json"]));
+        // The prompt is NOT a positional arg in live mode (delivered via stdin).
+        assert!(!inv.args.iter().any(|a| a == "do the thing"));
+    }
+
+    #[test]
+    fn parses_text_and_thinking_deltas() {
+        let text = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}}"#;
+        assert_eq!(
+            ClaudeAdapter.parse_line(text),
+            vec![AgentEvent::TextDelta { text: "Hel".into() }]
+        );
+        let think = r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"hmm"}}}"#;
+        assert_eq!(
+            ClaudeAdapter.parse_line(think),
+            vec![AgentEvent::ThinkingDelta { text: "hmm".into() }]
+        );
+        // message_start / non-delta stream events yield nothing.
+        let other = r#"{"type":"stream_event","event":{"type":"message_start"}}"#;
+        assert!(ClaudeAdapter.parse_line(other).is_empty());
     }
 }

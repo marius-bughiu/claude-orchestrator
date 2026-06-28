@@ -82,17 +82,20 @@ pub async fn run_agent<F>(
     spec: &RunSpec,
     cancel: CancelToken,
     timeout: Option<Duration>,
+    mut input: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
     mut on_event: F,
 ) -> Result<RunOutcome>
 where
     F: FnMut(&AgentEvent),
 {
+    use tokio::io::AsyncWriteExt;
     let invocation = adapter.build_invocation(spec, binary);
+    let needs_stdin = invocation.stdin.is_some() || input.is_some();
 
     let mut cmd = Command::new(&invocation.program);
     cmd.args(&invocation.args)
         .current_dir(&spec.cwd)
-        .stdin(if invocation.stdin.is_some() {
+        .stdin(if needs_stdin {
             Stdio::piped()
         } else {
             Stdio::null()
@@ -109,10 +112,15 @@ where
         }
     })?;
 
-    if let (Some(payload), Some(mut stdin)) = (invocation.stdin.clone(), child.stdin.take()) {
-        use tokio::io::AsyncWriteExt;
-        let _ = stdin.write_all(payload.as_bytes()).await;
-        drop(stdin);
+    // The child's stdin: kept open in live mode so messages can be injected;
+    // dropping it sends EOF, which lets the agent finish and exit.
+    let mut child_stdin = child.stdin.take();
+    if input.is_none() {
+        // One-shot stdin payload (if any), then close.
+        if let (Some(payload), Some(mut si)) = (invocation.stdin.clone(), child_stdin.take()) {
+            let _ = si.write_all(payload.as_bytes()).await;
+            drop(si);
+        }
     }
 
     let stdout = child
@@ -161,11 +169,34 @@ where
                 None => pending::<()>().await,
             }
         };
+        // Pending forever once the input channel is gone, so the branch is inert.
+        let next_input = async {
+            match input.as_mut() {
+                Some(rx) => rx.recv().await,
+                None => pending::<Option<String>>().await,
+            }
+        };
 
         tokio::select! {
             biased;
             _ = cancel.cancelled() => break StopReason::Cancelled,
             _ = timer => break StopReason::TimedOut,
+            msg = next_input => {
+                match msg {
+                    Some(text) => {
+                        if let Some(si) = child_stdin.as_mut() {
+                            let line = adapter.format_input_message(&text);
+                            let _ = si.write_all(line.as_bytes()).await;
+                            let _ = si.flush().await;
+                        }
+                    }
+                    // Channel closed: send EOF so the agent finishes and exits.
+                    None => {
+                        input = None;
+                        child_stdin = None;
+                    }
+                }
+            }
             line = lines.next_line() => {
                 match line {
                     Ok(Some(line)) => {
@@ -323,6 +354,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"f
             &spec,
             CancelToken::new(),
             Some(Duration::from_secs(10)),
+            None,
             |e| kinds.push(e.kind()),
         )
         .await
@@ -348,6 +380,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"f
             &spec,
             CancelToken::new(),
             None,
+            None,
             |_| {},
         )
         .await
@@ -367,10 +400,51 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"f
             tokio::time::sleep(Duration::from_millis(50)).await;
             c2.cancel();
         });
-        let outcome = run_agent(&adapter, "sh", &spec, cancel, None, |_| {})
+        let outcome = run_agent(&adapter, "sh", &spec, cancel, None, None, |_| {})
             .await
             .unwrap();
         assert!(outcome.cancelled);
         assert!(!outcome.success);
+    }
+
+    #[tokio::test]
+    async fn live_input_is_injected_and_eof_completes() {
+        // Echo a fixed assistant event for every stdin line, then exit on EOF.
+        let script = r#"while IFS= read -r line; do printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"got"}]}}'; done"#;
+        let adapter = FakeAdapter {
+            script: script.into(),
+        };
+        let mut spec = RunSpec::new("hello", std::env::temp_dir());
+        spec.live = true;
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        tx.send("first message".into()).unwrap();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(120)).await;
+            drop(tx); // EOF -> child exits
+        });
+
+        let mut texts = Vec::new();
+        let outcome = run_agent(
+            &adapter,
+            "sh",
+            &spec,
+            CancelToken::new(),
+            Some(Duration::from_secs(5)),
+            Some(rx),
+            |e| {
+                if let AgentEvent::Assistant { text } = e {
+                    texts.push(text.clone());
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            texts.iter().any(|t| t == "got"),
+            "injected stdin line should produce output"
+        );
+        assert!(!outcome.cancelled && !outcome.timed_out);
     }
 }

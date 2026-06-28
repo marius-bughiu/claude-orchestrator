@@ -145,6 +145,21 @@ pub fn send_message(
         .map_err(err)
 }
 
+/// Inject a message into a live session (or resume if it has finished). Returns
+/// the session id the UI should display.
+#[tauri::command]
+pub fn inject_message(
+    state: State<AppState>,
+    session_id: String,
+    message: String,
+    model: Option<String>,
+) -> CmdResult<String> {
+    state
+        .engine
+        .inject_message(&session_id, &message, model.as_deref())
+        .map_err(err)
+}
+
 #[tauri::command]
 pub fn stop_session(state: State<AppState>, id: String) -> CmdResult<()> {
     state.engine.stop_session(&id).map_err(err)

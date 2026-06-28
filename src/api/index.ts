@@ -54,6 +54,9 @@ export const getSessionEvents = (id: string) =>
   invoke<SessionEvent[]>("get_session_events", { id });
 export const sendMessage = (sessionId: string, message: string, model?: string) =>
   invoke<string>("send_message", { sessionId, message, model: model ?? null });
+/// Inject into a live session (or resume if finished). Returns the session id to show.
+export const injectMessage = (sessionId: string, message: string, model?: string) =>
+  invoke<string>("inject_message", { sessionId, message, model: model ?? null });
 export const stopSession = (id: string) => invoke<void>("stop_session", { id });
 
 // ---- Orchestrator ----------------------------------------------------------

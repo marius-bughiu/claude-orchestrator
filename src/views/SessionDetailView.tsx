@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal } from "lucide-react";
+import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User } from "lucide-react";
 import * as api from "../api";
 import type { Session, SessionEvent } from "../api/types";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
@@ -10,6 +10,15 @@ import { formatCost, formatDuration, formatTokens } from "../lib/format";
 function EventRow({ event }: { event: SessionEvent }) {
   const data = event.data as Record<string, unknown> | null;
   switch (event.kind) {
+    case "user_message":
+      return (
+        <div className="flex justify-end">
+          <div className="flex max-w-[80%] items-start gap-2 rounded-md border border-indigo-500/30 bg-indigo-600/10 px-3 py-2 text-sm text-indigo-100">
+            <User size={13} className="mt-0.5 shrink-0 text-indigo-300" />
+            <span className="whitespace-pre-wrap">{event.text}</span>
+          </div>
+        </div>
+      );
     case "assistant":
       return (
         <div className="whitespace-pre-wrap rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm text-neutral-200">
@@ -76,6 +85,7 @@ export function SessionDetailView() {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [events, setEvents] = useState<SessionEvent[]>([]);
+  const [streaming, setStreaming] = useState<{ assistant: string; thinking: string }>({ assistant: "", thinking: "" });
   const [message, setMessage] = useState("");
   const [model, setModel] = useState("");
   const [sending, setSending] = useState(false);
@@ -85,13 +95,26 @@ export function SessionDetailView() {
     let active = true;
     setSession(null);
     setEvents([]);
+    setStreaming({ assistant: "", thinking: "" });
     api.getSession(id).then((s) => active && setSession(s)).catch(() => {});
     api.getSessionEvents(id).then((e) => active && setEvents(e)).catch(() => {});
     const unlisten = api.onOrchestratorEvent((e) => {
       if (e.type === "sessionEvent" && e.sessionId === id) {
+        // A settled assistant/thinking message clears the matching live buffer.
         setEvents((prev) => [...prev, e.event]);
+        if (e.event.kind === "assistant") setStreaming((s) => ({ ...s, assistant: "" }));
+        if (e.event.kind === "thinking") setStreaming((s) => ({ ...s, thinking: "" }));
+      } else if (e.type === "sessionDelta" && e.sessionId === id) {
+        setStreaming((s) =>
+          e.kind === "thinking"
+            ? { ...s, thinking: s.thinking + e.text }
+            : { ...s, assistant: s.assistant + e.text },
+        );
       } else if (e.type === "sessionUpdated" && e.session.id === id) {
         setSession(e.session);
+        if (e.session.status !== "running" && e.session.status !== "pending") {
+          setStreaming({ assistant: "", thinking: "" });
+        }
       }
     });
     return () => {
@@ -102,7 +125,7 @@ export function SessionDetailView() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [events.length]);
+  }, [events.length, streaming.assistant, streaming.thinking]);
 
   const stop = async () => {
     try {
@@ -116,9 +139,10 @@ export function SessionDetailView() {
     if (!message.trim()) return;
     setSending(true);
     try {
-      const newId = await api.sendMessage(id, message.trim(), model.trim() || undefined);
+      // Live sessions inject in place (same id); finished ones resume (new id).
+      const targetId = await api.injectMessage(id, message.trim(), model.trim() || undefined);
       setMessage("");
-      navigate(`/sessions/${newId}`);
+      if (targetId !== id) navigate(`/sessions/${targetId}`);
     } catch (e) {
       console.error(e);
     } finally {
@@ -166,7 +190,19 @@ export function SessionDetailView() {
           <span className="whitespace-pre-wrap">{session.prompt.slice(0, 600)}{session.prompt.length > 600 ? "…" : ""}</span>
         </div>
         {events.map((e) => <EventRow key={e.id} event={e} />)}
-        {events.length === 0 && (
+        {streaming.thinking && (
+          <div className="flex gap-2 px-3 py-1 text-xs italic text-neutral-500">
+            <Brain size={13} className="mt-0.5 shrink-0" />
+            <span className="whitespace-pre-wrap">{streaming.thinking}</span>
+          </div>
+        )}
+        {streaming.assistant && (
+          <div className="whitespace-pre-wrap rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm text-neutral-200">
+            {streaming.assistant}
+            <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />
+          </div>
+        )}
+        {events.length === 0 && !streaming.assistant && !streaming.thinking && (
           <div className="py-8 text-center text-sm text-neutral-600">No events recorded.</div>
         )}
       </div>
@@ -175,7 +211,7 @@ export function SessionDetailView() {
         <div className="flex gap-2">
           <input
             className="input"
-            placeholder="Send a follow-up message (continues this conversation in a new session)…"
+            placeholder={isActive ? "Inject a message into this running session…" : "Send a follow-up (resumes in a new session)…"}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
