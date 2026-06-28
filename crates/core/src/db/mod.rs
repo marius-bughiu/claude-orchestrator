@@ -81,9 +81,13 @@ impl Db {
 
     pub fn get_project(&self, id: &str) -> Result<Project> {
         let conn = self.lock();
-        conn.query_row("SELECT * FROM projects WHERE id = ?1", params![id], map_project)
-            .optional()?
-            .ok_or_else(|| CoreError::NotFound(format!("project {id}")))
+        conn.query_row(
+            "SELECT * FROM projects WHERE id = ?1",
+            params![id],
+            map_project,
+        )
+        .optional()?
+        .ok_or_else(|| CoreError::NotFound(format!("project {id}")))
     }
 
     pub fn upsert_project(&self, p: &Project) -> Result<()> {
@@ -99,9 +103,17 @@ impl Db {
                max_concurrent=excluded.max_concurrent, roadmap_enabled=excluded.roadmap_enabled,
                verify_enabled=excluded.verify_enabled, updated_at=excluded.updated_at",
             params![
-                p.id, p.name, p.path, p.description, p.enabled,
-                p.default_agent.as_str(), p.max_concurrent,
-                p.roadmap_enabled, p.verify_enabled, p.created_at, p.updated_at,
+                p.id,
+                p.name,
+                p.path,
+                p.description,
+                p.enabled,
+                p.default_agent.as_str(),
+                p.max_concurrent,
+                p.roadmap_enabled,
+                p.verify_enabled,
+                p.created_at,
+                p.updated_at,
             ],
         )?;
         Ok(())
@@ -167,9 +179,21 @@ impl Db {
                max_attempts=excluded.max_attempts, tags=excluded.tags,
                auto_generated=excluded.auto_generated, updated_at=excluded.updated_at",
             params![
-                t.id, t.project_id, t.title, t.description, t.status.as_str(),
-                t.priority, t.agent.as_str(), t.parent_id, depends_on, t.attempts,
-                t.max_attempts, tags, t.auto_generated, t.created_at, t.updated_at,
+                t.id,
+                t.project_id,
+                t.title,
+                t.description,
+                t.status.as_str(),
+                t.priority,
+                t.agent.as_str(),
+                t.parent_id,
+                depends_on,
+                t.attempts,
+                t.max_attempts,
+                tags,
+                t.auto_generated,
+                t.created_at,
+                t.updated_at,
             ],
         )?;
         Ok(())
@@ -219,7 +243,11 @@ impl Db {
 
     // ---- Sessions -----------------------------------------------------------
 
-    pub fn list_sessions(&self, task_id: Option<&str>, project_id: Option<&str>) -> Result<Vec<Session>> {
+    pub fn list_sessions(
+        &self,
+        task_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> Result<Vec<Session>> {
         let conn = self.lock();
         let mut sql = String::from("SELECT * FROM sessions");
         let mut clauses = Vec::new();
@@ -246,9 +274,13 @@ impl Db {
 
     pub fn get_session(&self, id: &str) -> Result<Session> {
         let conn = self.lock();
-        conn.query_row("SELECT * FROM sessions WHERE id = ?1", params![id], map_session)
-            .optional()?
-            .ok_or_else(|| CoreError::NotFound(format!("session {id}")))
+        conn.query_row(
+            "SELECT * FROM sessions WHERE id = ?1",
+            params![id],
+            map_session,
+        )
+        .optional()?
+        .ok_or_else(|| CoreError::NotFound(format!("session {id}")))
     }
 
     pub fn upsert_session(&self, s: &Session) -> Result<()> {
@@ -266,9 +298,22 @@ impl Db {
                exit_code=excluded.exit_code, usage=excluded.usage,
                started_at=excluded.started_at, ended_at=excluded.ended_at",
             params![
-                s.id, s.task_id, s.project_id, s.agent.as_str(), s.kind.as_str(),
-                s.status.as_str(), s.agent_session_id, s.model, s.prompt, s.result_text,
-                s.error, s.exit_code, usage, s.started_at, s.ended_at, s.created_at,
+                s.id,
+                s.task_id,
+                s.project_id,
+                s.agent.as_str(),
+                s.kind.as_str(),
+                s.status.as_str(),
+                s.agent_session_id,
+                s.model,
+                s.prompt,
+                s.result_text,
+                s.error,
+                s.exit_code,
+                usage,
+                s.started_at,
+                s.ended_at,
+                s.created_at,
             ],
         )?;
         Ok(())
@@ -356,8 +401,8 @@ impl Db {
 
     pub fn list_events(&self, session_id: &str) -> Result<Vec<SessionEvent>> {
         let conn = self.lock();
-        let mut stmt = conn
-            .prepare("SELECT * FROM session_events WHERE session_id = ?1 ORDER BY id ASC")?;
+        let mut stmt =
+            conn.prepare("SELECT * FROM session_events WHERE session_id = ?1 ORDER BY id ASC")?;
         let rows = stmt
             .query_map(params![session_id], map_event)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -381,16 +426,27 @@ impl Db {
                 cache_creation_tokens, cost_usd, num_turns, created_at)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![
-                id, agent.as_str(), session_id, usage.input_tokens, usage.output_tokens,
-                usage.cache_read_tokens, usage.cache_creation_tokens, usage.total_cost_usd,
-                usage.num_turns, created_at,
+                id,
+                agent.as_str(),
+                session_id,
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_read_tokens,
+                usage.cache_creation_tokens,
+                usage.total_cost_usd,
+                usage.num_turns,
+                created_at,
             ],
         )?;
         Ok(())
     }
 
     /// Aggregate usage for an agent since `since` (None = all time).
-    pub fn usage_for_agent(&self, agent: AgentKind, since: Option<DateTime<Utc>>) -> Result<TokenUsage> {
+    pub fn usage_for_agent(
+        &self,
+        agent: AgentKind,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<TokenUsage> {
         let conn = self.lock();
         let sql = "SELECT
                 COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
@@ -434,7 +490,8 @@ impl Db {
                     task_title: r.get(2)?,
                     project_id: r.get(3)?,
                     project_name: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                    agent: AgentKind::from_str(&r.get::<_, String>(5)?).unwrap_or(AgentKind::Claude),
+                    agent: AgentKind::from_str(&r.get::<_, String>(5)?)
+                        .unwrap_or(AgentKind::Claude),
                     kind: SessionKind::from_str(&r.get::<_, String>(6)?),
                     status: SessionStatus::from_str(&r.get::<_, String>(7)?),
                     started_at: r.get(8)?,

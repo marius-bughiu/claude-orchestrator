@@ -131,7 +131,10 @@ impl AgentAdapter for ClaudeAdapter {
                 let success = subtype == "success" && !is_error;
                 vec![AgentEvent::Result {
                     success,
-                    result_text: value.get("result").and_then(Value::as_str).map(String::from),
+                    result_text: value
+                        .get("result")
+                        .and_then(Value::as_str)
+                        .map(String::from),
                     usage: parse_usage(&value),
                 }]
             }
@@ -144,9 +147,7 @@ impl AgentAdapter for ClaudeAdapter {
 
 /// Parse an assistant/user message envelope into content events.
 fn parse_message_content(value: &Value, is_user: bool) -> Vec<AgentEvent> {
-    let content = value
-        .get("message")
-        .and_then(|m| m.get("content"));
+    let content = value.get("message").and_then(|m| m.get("content"));
     let Some(content) = content else {
         return vec![AgentEvent::Raw {
             value: value.clone(),
@@ -251,10 +252,7 @@ fn parse_usage(value: &Value) -> TokenUsage {
             .get("total_cost_usd")
             .and_then(Value::as_f64)
             .unwrap_or(0.0),
-        num_turns: value
-            .get("num_turns")
-            .and_then(Value::as_u64)
-            .unwrap_or(0) as u32,
+        num_turns: value.get("num_turns").and_then(Value::as_u64).unwrap_or(0) as u32,
     }
 }
 
@@ -273,7 +271,9 @@ mod tests {
         assert!(inv.args.contains(&"-p".to_string()));
         assert!(inv.args.contains(&"stream-json".to_string()));
         assert!(inv.args.contains(&"--verbose".to_string()));
-        assert!(inv.args.contains(&"--dangerously-skip-permissions".to_string()));
+        assert!(inv
+            .args
+            .contains(&"--dangerously-skip-permissions".to_string()));
         // Prompt is the last positional.
         assert_eq!(inv.args.last().unwrap(), "do the thing");
     }
@@ -309,7 +309,12 @@ mod tests {
         ]}}"#;
         let evs = ClaudeAdapter.parse_line(line);
         assert_eq!(evs.len(), 2);
-        assert_eq!(evs[0], AgentEvent::Assistant { text: "hello".into() });
+        assert_eq!(
+            evs[0],
+            AgentEvent::Assistant {
+                text: "hello".into()
+            }
+        );
         match &evs[1] {
             AgentEvent::ToolUse { name, input } => {
                 assert_eq!(name, "Bash");
@@ -327,7 +332,11 @@ mod tests {
                      "cache_read_input_tokens":10,"cache_creation_input_tokens":5}}"#;
         let evs = ClaudeAdapter.parse_line(line);
         match &evs[0] {
-            AgentEvent::Result { success, result_text, usage } => {
+            AgentEvent::Result {
+                success,
+                result_text,
+                usage,
+            } => {
                 assert!(success);
                 assert_eq!(result_text.as_deref(), Some("done"));
                 assert_eq!(usage.input_tokens, 100);

@@ -66,9 +66,12 @@ fn project_crud() {
 fn tasks_filter_and_ordering() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();
-    db.upsert_task(&task("t1", "p1", TaskStatus::Pending, 10)).unwrap();
-    db.upsert_task(&task("t2", "p1", TaskStatus::Pending, 100)).unwrap();
-    db.upsert_task(&task("t3", "p1", TaskStatus::Completed, 50)).unwrap();
+    db.upsert_task(&task("t1", "p1", TaskStatus::Pending, 10))
+        .unwrap();
+    db.upsert_task(&task("t2", "p1", TaskStatus::Pending, 100))
+        .unwrap();
+    db.upsert_task(&task("t3", "p1", TaskStatus::Completed, 50))
+        .unwrap();
 
     let sched = db.schedulable_tasks("p1").unwrap();
     assert_eq!(sched.len(), 2);
@@ -82,7 +85,8 @@ fn tasks_filter_and_ordering() {
 fn cascade_delete_tasks_with_project() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();
-    db.upsert_task(&task("t1", "p1", TaskStatus::Pending, 10)).unwrap();
+    db.upsert_task(&task("t1", "p1", TaskStatus::Pending, 10))
+        .unwrap();
     db.delete_project("p1").unwrap();
     assert_eq!(db.count_pending_tasks().unwrap(), 0);
 }
@@ -112,14 +116,25 @@ fn session_and_events_and_usage() {
     };
     db.upsert_session(&session).unwrap();
     assert_eq!(db.count_active_sessions().unwrap(), 1);
-    assert_eq!(db.count_active_sessions_for_agent(AgentKind::Claude).unwrap(), 1);
+    assert_eq!(
+        db.count_active_sessions_for_agent(AgentKind::Claude)
+            .unwrap(),
+        1
+    );
 
-    db.insert_event("s1", "assistant", Some("hello"), None, now).unwrap();
+    db.insert_event("s1", "assistant", Some("hello"), None, now)
+        .unwrap();
     db.insert_event("s1", "result", None, None, now).unwrap();
     assert_eq!(db.list_events("s1").unwrap().len(), 2);
 
-    let usage = TokenUsage { input_tokens: 100, output_tokens: 50, total_cost_usd: 0.5, ..Default::default() };
-    db.insert_usage("u1", AgentKind::Claude, Some("s1"), &usage, now).unwrap();
+    let usage = TokenUsage {
+        input_tokens: 100,
+        output_tokens: 50,
+        total_cost_usd: 0.5,
+        ..Default::default()
+    };
+    db.insert_usage("u1", AgentKind::Claude, Some("s1"), &usage, now)
+        .unwrap();
     let agg = db.usage_for_agent(AgentKind::Claude, None).unwrap();
     assert_eq!(agg.input_tokens, 100);
     assert!((agg.total_cost_usd - 0.5).abs() < 1e-9);

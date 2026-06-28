@@ -6,12 +6,12 @@
 //! box, while power users can override behavior per project.
 //!
 //! Files:
-//! - `config.json`  — per-project orchestrator config (currently advisory).
-//! - `roadmap.md`   — prompt for the roadmap loop (generates new tasks when the
-//!                    queue empties).
-//! - `verify.md`    — prompt for the verifier (judges whether a finished task met
-//!                    its goal).
-//! - `task.md`      — preamble prepended to every task prompt for this project.
+//! - `config.json` — per-project orchestrator config (currently advisory).
+//! - `roadmap.md` — prompt for the roadmap loop (generates new tasks when the
+//!   queue empties).
+//! - `verify.md` — prompt for the verifier (judges whether a finished task met
+//!   its goal).
+//! - `task.md` — preamble prepended to every task prompt for this project.
 
 use crate::error::Result;
 use std::fs;

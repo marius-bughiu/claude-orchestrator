@@ -63,14 +63,19 @@ pub fn add_project(db: &Db, input: AddProjectInput) -> Result<Project> {
 
     // Reject duplicates by path.
     if db.list_projects()?.iter().any(|p| p.path == canonical) {
-        return Err(CoreError::invalid("a project with that path already exists"));
+        return Err(CoreError::invalid(
+            "a project with that path already exists",
+        ));
     }
 
-    let name = input.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
-        path.file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "project".into())
-    });
+    let name = input
+        .name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| {
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "project".into())
+        });
 
     let is_git = path.join(".git").exists();
     let now = Utc::now();

@@ -77,7 +77,10 @@ impl AgentAdapter for CodexAdapter {
                     .or_else(|| payload.get("thread_id"))
                     .and_then(Value::as_str)
                     .map(String::from),
-                model: payload.get("model").and_then(Value::as_str).map(String::from),
+                model: payload
+                    .get("model")
+                    .and_then(Value::as_str)
+                    .map(String::from),
             }],
             "agent_message" | "assistant_message" => vec![AgentEvent::Assistant {
                 text: payload
@@ -166,7 +169,12 @@ mod tests {
     fn parses_agent_message_nested_under_msg() {
         let line = r#"{"msg":{"type":"agent_message","message":"hello there"}}"#;
         let evs = CodexAdapter.parse_line(line);
-        assert_eq!(evs[0], AgentEvent::Assistant { text: "hello there".into() });
+        assert_eq!(
+            evs[0],
+            AgentEvent::Assistant {
+                text: "hello there".into()
+            }
+        );
     }
 
     #[test]
@@ -174,7 +182,9 @@ mod tests {
         let line = r#"{"type":"task_complete","last_agent_message":"all done","usage":{"input_tokens":5,"output_tokens":3}}"#;
         let evs = CodexAdapter.parse_line(line);
         match &evs[0] {
-            AgentEvent::Result { result_text, usage, .. } => {
+            AgentEvent::Result {
+                result_text, usage, ..
+            } => {
                 assert_eq!(result_text.as_deref(), Some("all done"));
                 assert_eq!(usage.input_tokens, 5);
             }

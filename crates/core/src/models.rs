@@ -27,6 +27,7 @@ impl AgentKind {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<AgentKind> {
         match s.to_ascii_lowercase().as_str() {
             "claude" => Some(AgentKind::Claude),
@@ -73,6 +74,7 @@ impl TaskStatus {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> TaskStatus {
         match s {
             "queued" => TaskStatus::Queued,
@@ -118,6 +120,7 @@ impl SessionKind {
             SessionKind::Verify => "verify",
         }
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> SessionKind {
         match s {
             "roadmap" => SessionKind::Roadmap,
@@ -150,6 +153,7 @@ impl SessionStatus {
             SessionStatus::TimedOut => "timed_out",
         }
     }
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> SessionStatus {
         match s {
             "running" => SessionStatus::Running,

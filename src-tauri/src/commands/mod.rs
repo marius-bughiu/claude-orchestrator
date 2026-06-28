@@ -138,7 +138,10 @@ pub fn send_message(
     session_id: String,
     message: String,
 ) -> CmdResult<String> {
-    state.engine.send_message(&session_id, &message).map_err(err)
+    state
+        .engine
+        .send_message(&session_id, &message)
+        .map_err(err)
 }
 
 #[tauri::command]
@@ -177,5 +180,9 @@ pub fn trigger_roadmap(state: State<AppState>, project_id: String) -> CmdResult<
 
 #[tauri::command]
 pub fn get_timeline(state: State<AppState>, limit: Option<u32>) -> CmdResult<Vec<TimelineItem>> {
-    state.engine.db().timeline(limit.unwrap_or(200)).map_err(err)
+    state
+        .engine
+        .db()
+        .timeline(limit.unwrap_or(200))
+        .map_err(err)
 }

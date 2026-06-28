@@ -90,12 +90,20 @@ impl AgentAdapter for GeminiAdapter {
 /// Sum token counts out of Gemini's `stats.models.<model>.tokens` tree.
 fn parse_stats(stats: Option<&Value>) -> TokenUsage {
     let mut usage = TokenUsage::default();
-    let Some(models) = stats.and_then(|s| s.get("models")).and_then(Value::as_object) else {
+    let Some(models) = stats
+        .and_then(|s| s.get("models"))
+        .and_then(Value::as_object)
+    else {
         return usage;
     };
     for model in models.values() {
         let tokens = model.get("tokens");
-        let get = |k: &str| tokens.and_then(|t| t.get(k)).and_then(Value::as_u64).unwrap_or(0);
+        let get = |k: &str| {
+            tokens
+                .and_then(|t| t.get(k))
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+        };
         usage.input_tokens += get("prompt");
         usage.output_tokens += get("candidates");
         usage.cache_read_tokens += get("cached");
@@ -122,7 +130,9 @@ mod tests {
         let line = r#"{"response":"answer","stats":{"models":{"gemini-2.5-pro":{"tokens":{"prompt":12,"candidates":8,"cached":2}}}}}"#;
         let evs = GeminiAdapter.parse_line(line);
         match &evs[0] {
-            AgentEvent::Result { result_text, usage, .. } => {
+            AgentEvent::Result {
+                result_text, usage, ..
+            } => {
                 assert_eq!(result_text.as_deref(), Some("answer"));
                 assert_eq!(usage.input_tokens, 12);
                 assert_eq!(usage.output_tokens, 8);
@@ -135,6 +145,11 @@ mod tests {
     #[test]
     fn plain_text_is_assistant() {
         let evs = GeminiAdapter.parse_line("just some text");
-        assert_eq!(evs[0], AgentEvent::Assistant { text: "just some text".into() });
+        assert_eq!(
+            evs[0],
+            AgentEvent::Assistant {
+                text: "just some text".into()
+            }
+        );
     }
 }

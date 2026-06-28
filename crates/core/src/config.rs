@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 /// Permission posture for spawned Claude sessions. Full autonomy requires
 /// bypassing prompts; we make that an explicit, opt-in choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionMode {
     /// `--permission-mode default` — agent asks; only safe for supervised runs.
@@ -16,13 +16,8 @@ pub enum PermissionMode {
     /// `--permission-mode plan`
     Plan,
     /// `--dangerously-skip-permissions` — required for unattended autonomy.
+    #[default]
     BypassPermissions,
-}
-
-impl Default for PermissionMode {
-    fn default() -> Self {
-        PermissionMode::BypassPermissions
-    }
 }
 
 /// Per-agent execution configuration.
@@ -101,9 +96,6 @@ impl Default for Settings {
 
 impl Settings {
     pub fn agent_config(&self, kind: AgentKind) -> AgentConfig {
-        self.agents
-            .get(kind.as_str())
-            .cloned()
-            .unwrap_or_default()
+        self.agents.get(kind.as_str()).cloned().unwrap_or_default()
     }
 }

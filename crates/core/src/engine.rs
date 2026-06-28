@@ -218,9 +218,9 @@ impl Engine {
                     None => {
                         // Queue is empty: run the roadmap loop if enabled and not
                         // already running for this project.
-                        let roadmap_active = active_sessions.iter().any(|s| {
-                            s.project_id == project.id && s.kind == SessionKind::Roadmap
-                        });
+                        let roadmap_active = active_sessions
+                            .iter()
+                            .any(|s| s.project_id == project.id && s.kind == SessionKind::Roadmap);
                         if settings.roadmap_enabled
                             && project.roadmap_enabled
                             && !roadmap_active
@@ -278,12 +278,12 @@ impl Engine {
         self.emit(OrchestratorEvent::TaskUpdated { task: task.clone() });
 
         let prompt = self.task_prompt(project, &task);
-        let session = self.new_session(project, Some(&task), task.agent, SessionKind::Task, &prompt);
+        let session =
+            self.new_session(project, Some(&task), task.agent, SessionKind::Task, &prompt);
         self.db.upsert_session(&session)?;
 
         let spec = self.run_spec(project, task.agent, &prompt);
-        self.clone()
-            .spawn_session_job(session, spec, Some(task));
+        self.clone().spawn_session_job(session, spec, Some(task));
         Ok(())
     }
 
@@ -292,7 +292,10 @@ impl Engine {
         let agent = project.default_agent;
         let session = self.new_session(project, None, agent, SessionKind::Roadmap, &prompt);
         self.db.upsert_session(&session)?;
-        self.log("info", format!("roadmap loop starting for {}", project.name));
+        self.log(
+            "info",
+            format!("roadmap loop starting for {}", project.name),
+        );
         let spec = self.run_spec(project, agent, &prompt);
         self.clone().spawn_session_job(session, spec, None);
         Ok(())
@@ -367,7 +370,10 @@ impl Engine {
                     }
                 }
                 Err(e) => {
-                    self.log("error", format!("session {} failed to run: {e}", session.id));
+                    self.log(
+                        "error",
+                        format!("session {} failed to run: {e}", session.id),
+                    );
                     self.finalize_session_error(&session, &e.to_string());
                 }
             }
@@ -391,7 +397,9 @@ impl Engine {
         row.status = SessionStatus::Running;
         row.started_at = Some(Utc::now());
         self.db.upsert_session(&row)?;
-        self.emit(OrchestratorEvent::SessionUpdated { session: row.clone() });
+        self.emit(OrchestratorEvent::SessionUpdated {
+            session: row.clone(),
+        });
         self.emit(OrchestratorEvent::StatusChanged);
 
         let settings = self.db.get_settings().unwrap_or_default();
@@ -412,26 +420,23 @@ impl Engine {
         let project_id = session.project_id.clone();
         let task_id = session.task_id.clone();
 
-        let result = runner::run_agent(
-            adapter.as_ref(),
-            &binary,
-            spec,
-            cancel,
-            timeout,
-            |event| {
-                let (text, data) = describe_event(event);
-                if let Ok(stored) =
-                    db.insert_event(&sid, event.kind(), text.as_deref(), data.as_ref(), Utc::now())
-                {
-                    sink.emit(OrchestratorEvent::SessionEvent {
-                        session_id: sid.clone(),
-                        project_id: project_id.clone(),
-                        task_id: task_id.clone(),
-                        event: stored,
-                    });
-                }
-            },
-        )
+        let result = runner::run_agent(adapter.as_ref(), &binary, spec, cancel, timeout, |event| {
+            let (text, data) = describe_event(event);
+            if let Ok(stored) = db.insert_event(
+                &sid,
+                event.kind(),
+                text.as_deref(),
+                data.as_ref(),
+                Utc::now(),
+            ) {
+                sink.emit(OrchestratorEvent::SessionEvent {
+                    session_id: sid.clone(),
+                    project_id: project_id.clone(),
+                    task_id: task_id.clone(),
+                    event: stored,
+                });
+            }
+        })
         .await;
 
         self.running.lock().unwrap().remove(&session.id);
@@ -460,7 +465,9 @@ impl Engine {
         row.usage = outcome.usage.clone();
         row.ended_at = Some(Utc::now());
         self.db.upsert_session(&row)?;
-        self.emit(OrchestratorEvent::SessionUpdated { session: row.clone() });
+        self.emit(OrchestratorEvent::SessionUpdated {
+            session: row.clone(),
+        });
 
         // Record usage for the agent.
         if outcome.usage != TokenUsage::default() {
@@ -511,7 +518,10 @@ impl Engine {
                 TaskStatus::NeedsReview
             };
             if let Some(err) = &outcome.error {
-                task.description = append_feedback(&task.description, &format!("Previous attempt failed: {err}"));
+                task.description = append_feedback(
+                    &task.description,
+                    &format!("Previous attempt failed: {err}"),
+                );
             }
             self.db.upsert_task(&task)?;
             self.emit(OrchestratorEvent::TaskUpdated { task });
@@ -550,7 +560,10 @@ impl Engine {
                 // No parseable verdict: trust the executor but flag it.
                 self.log(
                     "warn",
-                    format!("verifier produced no verdict for task {}; marking complete", task.id),
+                    format!(
+                        "verifier produced no verdict for task {}; marking complete",
+                        task.id
+                    ),
                 );
                 task.status = TaskStatus::Completed;
             }
@@ -568,12 +581,21 @@ impl Engine {
         task_outcome: &RunOutcome,
     ) -> Result<Option<parse::VerifyVerdict>> {
         let base = conventions::verify_prompt(&project.path);
-        let result_text = task_outcome.result_text.as_deref().unwrap_or("(no result text)");
+        let result_text = task_outcome
+            .result_text
+            .as_deref()
+            .unwrap_or("(no result text)");
         let prompt = format!(
             "{base}\n\n---\n## Task under review\nTitle: {}\n\nAcceptance criteria / description:\n{}\n\n## Executing session result\n{}\n",
             task.title, task.description, result_text
         );
-        let session = self.new_session(project, Some(task), project.default_agent, SessionKind::Verify, &prompt);
+        let session = self.new_session(
+            project,
+            Some(task),
+            project.default_agent,
+            SessionKind::Verify,
+            &prompt,
+        );
         self.db.upsert_session(&session)?;
         let spec = self.run_spec(project, project.default_agent, &prompt);
         let outcome = self.run_session(&session, &spec).await?;
@@ -618,7 +640,10 @@ impl Engine {
             self.emit(OrchestratorEvent::TaskUpdated { task });
             created += 1;
         }
-        self.log("info", format!("roadmap created {created} task(s) for {}", project.name));
+        self.log(
+            "info",
+            format!("roadmap created {created} task(s) for {}", project.name),
+        );
         Ok(())
     }
 }
@@ -632,10 +657,15 @@ fn append_feedback(description: &str, feedback: &str) -> String {
 }
 
 /// Produce a human-readable text + structured payload for persisting an event.
-fn describe_event(event: &crate::agents::AgentEvent) -> (Option<String>, Option<serde_json::Value>) {
+fn describe_event(
+    event: &crate::agents::AgentEvent,
+) -> (Option<String>, Option<serde_json::Value>) {
     use crate::agents::AgentEvent::*;
     match event {
-        Init { agent_session_id, model } => (
+        Init {
+            agent_session_id,
+            model,
+        } => (
             Some(format!(
                 "session initialized ({})",
                 model.clone().unwrap_or_else(|| "model unknown".into())
@@ -652,7 +682,11 @@ fn describe_event(event: &crate::agents::AgentEvent) -> (Option<String>, Option<
             Some(content.clone()),
             Some(serde_json::json!({ "isError": is_error })),
         ),
-        Result { success, result_text, usage } => (
+        Result {
+            success,
+            result_text,
+            usage,
+        } => (
             result_text.clone(),
             Some(serde_json::json!({ "success": success, "usage": usage })),
         ),

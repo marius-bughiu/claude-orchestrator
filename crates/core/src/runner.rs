@@ -312,7 +312,9 @@ printf '%s\n' '{"type":"system","subtype":"init","session_id":"s-9","model":"m"}
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
 printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"finished","num_turns":2,"total_cost_usd":0.01,"usage":{"input_tokens":10,"output_tokens":5}}'
 "#;
-        let adapter = FakeAdapter { script: script.into() };
+        let adapter = FakeAdapter {
+            script: script.into(),
+        };
         let spec = RunSpec::new("x", std::env::temp_dir());
         let mut kinds = Vec::new();
         let outcome = run_agent(
@@ -336,7 +338,9 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"f
 
     #[tokio::test]
     async fn missing_binary_is_unavailable() {
-        let adapter = FakeAdapter { script: String::new() };
+        let adapter = FakeAdapter {
+            script: String::new(),
+        };
         let spec = RunSpec::new("x", std::env::temp_dir());
         let err = run_agent(
             &adapter,
