@@ -118,6 +118,25 @@ export function SettingsView() {
       </section>
 
       <section className="card mb-5 p-4">
+        <h3 className="mb-1 text-sm font-semibold text-neutral-200">Git isolation</h3>
+        <p className="mb-3 text-xs text-neutral-500">Run each task in its own git worktree on a dedicated branch, so parallel agents never collide in the working tree.</p>
+        <div className="flex flex-col gap-3">
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.isolateWorktrees} onChange={(e) => set({ isolateWorktrees: e.target.checked })} />
+            Isolate tasks in per-task worktrees
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.autoCommit} onChange={(e) => set({ autoCommit: e.target.checked })} disabled={!draft.isolateWorktrees} />
+            Auto-commit task changes to the branch
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.autoPr} onChange={(e) => set({ autoPr: e.target.checked })} disabled={!draft.isolateWorktrees || !draft.autoCommit} />
+            Open a pull request when a task completes (needs <code className="text-neutral-400">gh</code>)
+          </label>
+        </div>
+      </section>
+
+      <section className="card mb-5 p-4">
         <h3 className="mb-1 text-sm font-semibold text-neutral-200">Permissions</h3>
         <p className="mb-3 text-xs text-neutral-500">How much autonomy spawned agents have.</p>
         <select className="input max-w-sm" value={draft.permissionMode} onChange={(e) => set({ permissionMode: e.target.value as PermissionMode })}>

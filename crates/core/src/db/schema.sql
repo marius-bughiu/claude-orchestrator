@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     error             TEXT,
     exit_code         INTEGER,
     usage             TEXT NOT NULL DEFAULT '{}',
+    branch            TEXT,
+    pr_url            TEXT,
     started_at        TEXT,
     ended_at          TEXT,
     created_at        TEXT NOT NULL

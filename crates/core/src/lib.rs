@@ -23,6 +23,7 @@ pub mod runner;
 pub mod scheduled;
 pub mod service;
 pub mod util;
+pub mod worktree;
 
 pub use config::{AgentConfig, PermissionMode, Settings};
 pub use db::Db;

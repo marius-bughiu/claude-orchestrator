@@ -101,6 +101,17 @@ pub struct Settings {
     /// fails.
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
+    /// Run each task session in its own git worktree (on a dedicated branch) so
+    /// concurrent sessions in the same repo don't clobber each other.
+    #[serde(default = "default_true")]
+    pub isolate_worktrees: bool,
+    /// After a successful isolated task, commit any uncommitted changes on the
+    /// task branch.
+    #[serde(default = "default_true")]
+    pub auto_commit: bool,
+    /// After committing, push the branch and open a pull request via `gh`.
+    #[serde(default)]
+    pub auto_pr: bool,
     /// How often to re-scan projects for scheduled-task markdown files, seconds.
     pub schedule_refresh_secs: u64,
     /// Per-agent configuration, keyed by agent name.
@@ -125,6 +136,9 @@ impl Default for Settings {
             balance_agents: true,
             live_streaming: true,
             notifications_enabled: true,
+            isolate_worktrees: true,
+            auto_commit: true,
+            auto_pr: false,
             schedule_refresh_secs: 300,
             agents,
         }

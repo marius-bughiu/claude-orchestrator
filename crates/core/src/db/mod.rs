@@ -22,6 +22,8 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE projects ADD COLUMN allowed_agents TEXT NOT NULL DEFAULT '[\"claude\"]'",
     "ALTER TABLE tasks ADD COLUMN auto_agent INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE tasks ADD COLUMN model TEXT",
+    "ALTER TABLE sessions ADD COLUMN branch TEXT",
+    "ALTER TABLE sessions ADD COLUMN pr_url TEXT",
 ];
 
 fn run_migrations(conn: &Connection) {
@@ -314,13 +316,15 @@ impl Db {
         conn.execute(
             "INSERT INTO sessions
                (id, task_id, project_id, agent, kind, status, agent_session_id, model,
-                prompt, result_text, error, exit_code, usage, started_at, ended_at, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
+                prompt, result_text, error, exit_code, usage, branch, pr_url,
+                started_at, ended_at, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
              ON CONFLICT(id) DO UPDATE SET
                task_id=excluded.task_id, status=excluded.status,
                agent_session_id=excluded.agent_session_id, model=excluded.model,
                result_text=excluded.result_text, error=excluded.error,
                exit_code=excluded.exit_code, usage=excluded.usage,
+               branch=excluded.branch, pr_url=excluded.pr_url,
                started_at=excluded.started_at, ended_at=excluded.ended_at",
             params![
                 s.id,
@@ -336,6 +340,8 @@ impl Db {
                 s.error,
                 s.exit_code,
                 usage,
+                s.branch,
+                s.pr_url,
                 s.started_at,
                 s.ended_at,
                 s.created_at,
@@ -825,6 +831,8 @@ fn map_session(r: &Row) -> rusqlite::Result<Session> {
         error: r.get("error")?,
         exit_code: r.get("exit_code")?,
         usage: serde_json::from_str(&usage_json).unwrap_or_default(),
+        branch: r.get("branch")?,
+        pr_url: r.get("pr_url")?,
         started_at: r.get("started_at")?,
         ended_at: r.get("ended_at")?,
         created_at: r.get("created_at")?,

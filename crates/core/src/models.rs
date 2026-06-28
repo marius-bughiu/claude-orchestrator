@@ -305,6 +305,10 @@ pub struct Session {
     pub error: Option<String>,
     pub exit_code: Option<i32>,
     pub usage: TokenUsage,
+    /// Git branch this session worked on (when worktree isolation is enabled).
+    pub branch: Option<String>,
+    /// URL of a pull request opened for this session's branch, if any.
+    pub pr_url: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub ended_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,

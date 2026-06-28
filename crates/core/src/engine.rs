@@ -13,9 +13,10 @@ use crate::parse;
 use crate::runner::{self, CancelToken, RunOutcome};
 use crate::scheduled;
 use crate::util;
+use crate::worktree;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;
@@ -274,6 +275,8 @@ impl Engine {
             error: None,
             exit_code: None,
             usage: TokenUsage::default(),
+            branch: None,
+            pr_url: None,
             started_at: None,
             ended_at: None,
             created_at: Utc::now(),
@@ -592,10 +595,28 @@ impl Engine {
         self.emit(OrchestratorEvent::TaskUpdated { task: task.clone() });
 
         let prompt = self.task_prompt(project, &task);
-        let session = self.new_session(project, Some(&task), agent, SessionKind::Task, &prompt);
-        self.db.upsert_session(&session)?;
+        let mut session = self.new_session(project, Some(&task), agent, SessionKind::Task, &prompt);
+        let mut spec = self.run_spec(project, agent, &prompt, task.model.as_deref());
 
-        let spec = self.run_spec(project, agent, &prompt, task.model.as_deref());
+        // Isolate the session in its own git worktree + branch when enabled and
+        // the project is a git repo, so concurrent sessions don't collide.
+        if settings.isolate_worktrees && worktree::is_git_repo(&project.path) {
+            let branch = worktree::branch_name(&task.title, &session.id);
+            let wt = worktree::worktrees_root().join(&session.id);
+            match worktree::create(Path::new(&project.path), &branch, &wt) {
+                Ok(()) => {
+                    self.log("info", format!("isolated task on {branch}"));
+                    session.branch = Some(branch);
+                    spec.cwd = wt;
+                }
+                Err(e) => self.log(
+                    "warn",
+                    format!("worktree setup failed, running in-place: {e}"),
+                ),
+            }
+        }
+
+        self.db.upsert_session(&session)?;
         self.clone()
             .spawn_session_job(session, spec, Some(task), settings.live_streaming);
         Ok(())
@@ -639,6 +660,8 @@ impl Engine {
             error: None,
             exit_code: None,
             usage: TokenUsage::default(),
+            branch: None,
+            pr_url: None,
             started_at: None,
             ended_at: None,
             created_at: Utc::now(),
@@ -948,18 +971,23 @@ impl Engine {
         session: &Session,
         outcome: &RunOutcome,
     ) -> Result<()> {
+        let project = self.db.get_project(&task.project_id)?;
+        let settings = self.db.get_settings()?;
+        // Session ran here (its worktree when isolated, else the project root).
+        let cwd: PathBuf = if session.branch.is_some() {
+            worktree::worktrees_root().join(&session.id)
+        } else {
+            PathBuf::from(&project.path)
+        };
+
         task.attempts += 1;
         task.updated_at = Utc::now();
+        let mut completed = false;
 
         if outcome.cancelled {
             task.status = TaskStatus::Pending;
             task.attempts = task.attempts.saturating_sub(1);
-            self.db.upsert_task(&task)?;
-            self.emit(OrchestratorEvent::TaskUpdated { task });
-            return Ok(());
-        }
-
-        if !outcome.success {
+        } else if !outcome.success {
             task.status = if task.attempts >= task.max_attempts {
                 TaskStatus::Failed
             } else {
@@ -971,55 +999,116 @@ impl Engine {
                     &format!("Previous attempt failed: {err}"),
                 );
             }
-            self.db.upsert_task(&task)?;
-            self.emit(OrchestratorEvent::TaskUpdated { task });
-            return Ok(());
-        }
-
-        // Successful run. Verify if enabled.
-        let settings = self.db.get_settings()?;
-        let project = self.db.get_project(&task.project_id)?;
-        if !(settings.verify_enabled && project.verify_enabled) {
+        } else if !(settings.verify_enabled && project.verify_enabled) {
             task.status = TaskStatus::Completed;
-            self.db.upsert_task(&task)?;
-            self.emit(OrchestratorEvent::TaskUpdated { task });
-            return Ok(());
+            completed = true;
+        } else {
+            match self
+                .run_verification(&project, &task, outcome, &cwd)
+                .await?
+            {
+                Some(v) if v.complete => {
+                    task.status = TaskStatus::Completed;
+                    completed = true;
+                }
+                Some(v) => {
+                    let feedback = if v.follow_up.trim().is_empty() {
+                        v.reason
+                    } else {
+                        v.follow_up
+                    };
+                    task.description = append_feedback(&task.description, &feedback);
+                    task.status = if task.attempts >= task.max_attempts {
+                        TaskStatus::Failed
+                    } else {
+                        TaskStatus::NeedsReview
+                    };
+                }
+                None => {
+                    self.log(
+                        "warn",
+                        format!(
+                            "verifier produced no verdict for task {}; marking complete",
+                            task.id
+                        ),
+                    );
+                    task.status = TaskStatus::Completed;
+                    completed = true;
+                }
+            }
         }
 
-        let verdict = self.run_verification(&project, &task, outcome).await?;
-        match verdict {
-            Some(v) if v.complete => {
-                task.status = TaskStatus::Completed;
-            }
-            Some(v) => {
-                let feedback = if v.follow_up.trim().is_empty() {
-                    v.reason
-                } else {
-                    v.follow_up
-                };
-                task.description = append_feedback(&task.description, &feedback);
-                task.status = if task.attempts >= task.max_attempts {
-                    TaskStatus::Failed
-                } else {
-                    TaskStatus::NeedsReview
-                };
-            }
-            None => {
-                // No parseable verdict: trust the executor but flag it.
-                self.log(
-                    "warn",
-                    format!(
-                        "verifier produced no verdict for task {}; marking complete",
-                        task.id
-                    ),
-                );
-                task.status = TaskStatus::Completed;
-            }
-        }
-        let _ = session;
+        // Commit / PR / clean up the worktree (no-op when not isolated).
+        self.finalize_worktree(&project, session, &task, completed);
+
         self.db.upsert_task(&task)?;
         self.emit(OrchestratorEvent::TaskUpdated { task });
         Ok(())
+    }
+
+    /// Finalize an isolated task's worktree: on completion, optionally commit and
+    /// open a PR; always remove the worktree and drop empty branches.
+    fn finalize_worktree(
+        &self,
+        project: &Project,
+        session: &Session,
+        task: &Task,
+        completed: bool,
+    ) {
+        let Some(branch) = session.branch.clone() else {
+            return; // not isolated
+        };
+        let repo = PathBuf::from(&project.path);
+        let wt = worktree::worktrees_root().join(&session.id);
+        let settings = self.db.get_settings().unwrap_or_default();
+        let mut committed = false;
+        let mut pr_url = None;
+
+        if completed && settings.auto_commit {
+            match worktree::commit_all(&wt, &format!("{}\n\nBy Claude Orchestrator.", task.title)) {
+                Ok(Some(hash)) => {
+                    committed = true;
+                    self.log("info", format!("committed {hash} on {branch}"));
+                }
+                Ok(None) => {}
+                Err(e) => self.log("warn", format!("commit failed: {e}")),
+            }
+            if committed && settings.auto_pr {
+                if let Err(e) = worktree::push(&wt, &branch) {
+                    self.log("warn", format!("push failed: {e}"));
+                } else {
+                    let base = worktree::current_branch(&repo).unwrap_or_else(|| "main".into());
+                    let body = format!(
+                        "Automated PR for task: {}\n\nOpened by Claude Orchestrator.",
+                        task.title
+                    );
+                    match worktree::open_pr(&wt, &task.title, &body, &base) {
+                        Ok(Some(url)) => {
+                            self.log("info", format!("opened PR {url}"));
+                            pr_url = Some(url);
+                        }
+                        _ => self.log("info", "PR not opened (gh unavailable or no remote)"),
+                    }
+                }
+            }
+        }
+
+        // Persist branch/PR (or clear the branch if nothing was committed).
+        if let Ok(mut row) = self.db.get_session(&session.id) {
+            if pr_url.is_some() {
+                row.pr_url = pr_url;
+            }
+            if !committed {
+                row.branch = None;
+            }
+            let _ = self.db.upsert_session(&row);
+            self.emit(OrchestratorEvent::SessionUpdated { session: row });
+        }
+
+        let _ = worktree::remove(&repo, &wt);
+        if !committed {
+            worktree::delete_branch(&repo, &branch);
+        }
     }
 
     async fn run_verification(
@@ -1027,6 +1116,7 @@ impl Engine {
         project: &Project,
         task: &Task,
         task_outcome: &RunOutcome,
+        cwd: &Path,
     ) -> Result<Option<parse::VerifyVerdict>> {
         let base = conventions::verify_prompt(&project.path);
         let result_text = task_outcome
@@ -1045,7 +1135,8 @@ impl Engine {
             &prompt,
         );
         self.db.upsert_session(&session)?;
-        let spec = self.run_spec(project, project.default_agent, &prompt, None);
+        let mut spec = self.run_spec(project, project.default_agent, &prompt, None);
+        spec.cwd = cwd.to_path_buf(); // verify in the same worktree to see changes
         let outcome = self.run_session(&session, &spec, false).await?;
         Ok(outcome
             .result_text

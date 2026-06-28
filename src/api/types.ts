@@ -86,6 +86,8 @@ export interface Session {
   error: string | null;
   exitCode: number | null;
   usage: TokenUsage;
+  branch: string | null;
+  prUrl: string | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -184,6 +186,9 @@ export interface Settings {
   balanceAgents: boolean;
   liveStreaming: boolean;
   notificationsEnabled: boolean;
+  isolateWorktrees: boolean;
+  autoCommit: boolean;
+  autoPr: boolean;
   scheduleRefreshSecs: number;
   agents: Record<string, AgentConfig>;
 }

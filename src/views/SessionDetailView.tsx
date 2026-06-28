@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User } from "lucide-react";
+import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User, GitBranch, GitPullRequest } from "lucide-react";
 import * as api from "../api";
 import type { Session, SessionEvent } from "../api/types";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
@@ -165,6 +165,16 @@ export function SessionDetailView() {
           <SessionStatusBadge status={session.status} />
           <AgentBadge agent={session.agent} />
           {session.model && <span className="text-xs text-neutral-500">{session.model}</span>}
+          {session.branch && (
+            <span className="inline-flex items-center gap-1 rounded bg-[var(--color-surface)] px-1.5 py-0.5 font-mono text-[11px] text-neutral-400" title="Isolated worktree branch">
+              <GitBranch size={11} /> {session.branch}
+            </span>
+          )}
+          {session.prUrl && (
+            <a href={session.prUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-300 hover:underline" title="Pull request">
+              <GitPullRequest size={11} /> PR
+            </a>
+          )}
           <Link to={`/projects/${session.projectId}`} className="ml-auto text-xs text-indigo-300 hover:underline">
             view project
           </Link>
