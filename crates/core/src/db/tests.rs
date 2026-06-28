@@ -37,6 +37,7 @@ fn task(id: &str, project_id: &str, status: TaskStatus, priority: i64) -> Task {
         max_attempts: 3,
         tags: vec![],
         auto_generated: false,
+        retry_at: None,
         created_at: now,
         updated_at: now,
     }

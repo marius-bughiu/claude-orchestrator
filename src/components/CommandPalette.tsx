@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FolderGit2, ListTodo, Clock, GanttChartSquare, Settings as SettingsIcon,
-  Play, Pause, RefreshCw, Palette, Search,
+  Play, Pause, RefreshCw, Palette, Search, Terminal,
 } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
@@ -20,6 +20,9 @@ interface Cmd {
 export function CommandPalette() {
   const navigate = useNavigate();
   const status = useStore((s) => s.status);
+  const projects = useStore((s) => s.projects);
+  const tasks = useStore((s) => s.tasks);
+  const timeline = useStore((s) => s.timeline);
   const refreshStatus = useStore((s) => s.refreshStatus);
   const refreshScheduled = useStore((s) => s.refreshScheduled);
   const [open, setOpen] = useState(false);
@@ -84,10 +87,35 @@ export function CommandPalette() {
     ];
   }, [navigate, status, refreshStatus, refreshScheduled]);
 
+  // When the user types, also search across projects, tasks, and recent
+  // sessions — so the palette doubles as global search, not just navigation.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? commands.filter((c) => c.label.toLowerCase().includes(q)) : commands;
-  }, [commands, query]);
+    if (!q) return commands;
+    const go = (to: string) => () => { navigate(to); setOpen(false); };
+    const cmds = commands.filter((c) => c.label.toLowerCase().includes(q));
+    const projHits: Cmd[] = projects
+      .filter((p) => `${p.name} ${p.path}`.toLowerCase().includes(q))
+      .slice(0, 5)
+      .map((p) => ({ id: `p-${p.id}`, label: p.name, hint: "project", icon: FolderGit2, run: go(`/projects/${p.id}`) }));
+    const taskHits: Cmd[] = tasks
+      .filter((t) => `${t.title} ${t.description} ${t.tags.join(" ")}`.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((t) => ({ id: `t-${t.id}`, label: t.title, hint: "task", icon: ListTodo, run: go(`/tasks/${t.id}`) }));
+    const seen = new Set<string>();
+    const sessionHits: Cmd[] = timeline
+      .filter((s) => `${s.taskTitle ?? ""} ${s.projectName} ${s.kind}`.toLowerCase().includes(q))
+      .filter((s) => !seen.has(s.sessionId) && seen.add(s.sessionId))
+      .slice(0, 6)
+      .map((s) => ({
+        id: `s-${s.sessionId}`,
+        label: s.taskTitle ?? `${s.kind} session`,
+        hint: `session · ${s.projectName}`,
+        icon: Terminal,
+        run: go(`/sessions/${s.sessionId}`),
+      }));
+    return [...cmds, ...projHits, ...taskHits, ...sessionHits];
+  }, [commands, query, projects, tasks, timeline, navigate]);
 
   if (!open) return null;
 
@@ -105,7 +133,7 @@ export function CommandPalette() {
           <input
             ref={inputRef}
             className="w-full bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-500"
-            placeholder="Type a command…"
+            placeholder="Search tasks, projects, sessions, or run a command…"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setSel(0); }}
             onKeyDown={onKeyDown}
@@ -113,7 +141,7 @@ export function CommandPalette() {
           <kbd className="rounded border border-[var(--color-border)] px-1.5 text-[10px] text-neutral-500">esc</kbd>
         </div>
         <div className="max-h-80 overflow-y-auto py-1">
-          {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-neutral-500">No commands</div>}
+          {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-neutral-500">No matches</div>}
           {filtered.map((c, i) => {
             const Icon = c.icon;
             return (
@@ -123,8 +151,9 @@ export function CommandPalette() {
                 onClick={c.run}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm ${i === sel ? "bg-indigo-600/15 text-indigo-100" : "text-neutral-300"}`}
               >
-                <Icon size={15} className="text-neutral-400" />
-                {c.label}
+                <Icon size={15} className="shrink-0 text-neutral-400" />
+                <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                {c.hint && <span className="shrink-0 text-[11px] text-neutral-500">{c.hint}</span>}
               </button>
             );
           })}

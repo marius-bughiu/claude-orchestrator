@@ -24,6 +24,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tasks ADD COLUMN model TEXT",
     "ALTER TABLE sessions ADD COLUMN branch TEXT",
     "ALTER TABLE sessions ADD COLUMN pr_url TEXT",
+    "ALTER TABLE tasks ADD COLUMN retry_at TEXT",
 ];
 
 fn run_migrations(conn: &Connection) {
@@ -194,15 +195,16 @@ impl Db {
             "INSERT INTO tasks
                (id, project_id, title, description, status, priority, agent, auto_agent, model,
                 parent_id, depends_on, attempts, max_attempts, tags, auto_generated,
-                created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+                retry_at, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
              ON CONFLICT(id) DO UPDATE SET
                title=excluded.title, description=excluded.description, status=excluded.status,
                priority=excluded.priority, agent=excluded.agent, auto_agent=excluded.auto_agent,
                model=excluded.model, parent_id=excluded.parent_id,
                depends_on=excluded.depends_on, attempts=excluded.attempts,
                max_attempts=excluded.max_attempts, tags=excluded.tags,
-               auto_generated=excluded.auto_generated, updated_at=excluded.updated_at",
+               auto_generated=excluded.auto_generated, retry_at=excluded.retry_at,
+               updated_at=excluded.updated_at",
             params![
                 t.id,
                 t.project_id,
@@ -219,6 +221,7 @@ impl Db {
                 t.max_attempts,
                 tags,
                 t.auto_generated,
+                t.retry_at,
                 t.created_at,
                 t.updated_at,
             ],
@@ -861,6 +864,7 @@ fn map_task(r: &Row) -> rusqlite::Result<Task> {
         max_attempts: r.get::<_, i64>("max_attempts")? as u32,
         tags: serde_json::from_str(&tags).unwrap_or_default(),
         auto_generated: r.get("auto_generated")?,
+        retry_at: r.get("retry_at")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })

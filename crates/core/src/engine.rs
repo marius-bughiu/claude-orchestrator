@@ -364,6 +364,11 @@ impl Engine {
                         active += 1;
                     }
                     None => {
+                        // Tasks merely waiting out their retry backoff mean the
+                        // queue isn't empty — don't generate new roadmap work.
+                        if self.has_backing_off_tasks(&project.id)? {
+                            break;
+                        }
                         // Queue is empty: run the roadmap loop if enabled and not
                         // already running for this project.
                         let roadmap_active = active_sessions
@@ -539,9 +544,12 @@ impl Engine {
                 parent_id: None,
                 depends_on: vec![],
                 attempts: 0,
-                max_attempts: 3,
+                // Scheduled tasks are not retried by default — they run again on
+                // their own cadence rather than via the backoff retry loop.
+                max_attempts: 1,
                 tags: vec!["scheduled".into()],
                 auto_generated: true,
+                retry_at: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -559,19 +567,48 @@ impl Engine {
         Ok(fired)
     }
 
-    /// Pick the highest-priority schedulable task whose dependencies are met and
-    /// whose attempts are not exhausted.
+    /// Pick the highest-priority schedulable task whose dependencies are met,
+    /// whose attempts are not exhausted, and whose retry backoff has elapsed.
     fn pick_task(&self, project_id: &str) -> Result<Option<Task>> {
+        let now = Utc::now();
         let candidates = self.db.schedulable_tasks(project_id)?;
         for task in candidates {
             if task.attempts >= task.max_attempts {
                 continue;
+            }
+            if task.retry_at.map(|r| r > now).unwrap_or(false) {
+                continue; // still backing off
             }
             if self.deps_satisfied(&task)? {
                 return Ok(Some(task));
             }
         }
         Ok(None)
+    }
+
+    /// True if a project has schedulable tasks that are only waiting out their
+    /// retry backoff (so the queue isn't really empty — don't run the roadmap).
+    fn has_backing_off_tasks(&self, project_id: &str) -> Result<bool> {
+        let now = Utc::now();
+        Ok(self
+            .db
+            .schedulable_tasks(project_id)?
+            .iter()
+            .any(|t| t.attempts < t.max_attempts && t.retry_at.map(|r| r > now).unwrap_or(false)))
+    }
+
+    /// Backoff before the next retry: `base * 2^(attempts-1)`, capped at the
+    /// configured maximum. `None` when retries are disabled.
+    fn retry_delay(&self, settings: &Settings, attempts: u32) -> Option<chrono::Duration> {
+        if !settings.retry_enabled {
+            return None;
+        }
+        let exp = attempts.saturating_sub(1).min(20);
+        let secs = settings
+            .retry_base_secs
+            .saturating_mul(1u64 << exp)
+            .min(settings.retry_max_secs.max(1));
+        Some(chrono::Duration::seconds(secs as i64))
     }
 
     fn deps_satisfied(&self, task: &Task) -> Result<bool> {
@@ -848,6 +885,7 @@ impl Engine {
                 max_attempts: 3,
                 tags,
                 auto_generated: true,
+                retry_at: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -1324,6 +1362,28 @@ impl Engine {
             }
         }
 
+        // Apply retry backoff: a task awaiting another attempt waits out an
+        // exponential delay before it's eligible again; anything else is cleared.
+        if task.status == TaskStatus::NeedsReview {
+            task.retry_at = self
+                .retry_delay(&settings, task.attempts)
+                .map(|d| Utc::now() + d);
+            if let Some(at) = task.retry_at {
+                self.log(
+                    "info",
+                    format!(
+                        "task '{}' will retry after backoff (attempt {}/{}) at {}",
+                        task.title,
+                        task.attempts,
+                        task.max_attempts,
+                        at.to_rfc3339()
+                    ),
+                );
+            }
+        } else {
+            task.retry_at = None;
+        }
+
         // Commit / PR / clean up the worktree (no-op when not isolated).
         self.finalize_worktree(&project, session, &task, completed);
 
@@ -1487,6 +1547,7 @@ impl Engine {
                 max_attempts: 3,
                 tags: spec.tags.clone(),
                 auto_generated: true,
+                retry_at: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -1598,6 +1659,7 @@ mod tests {
             max_attempts: 3,
             tags: vec![],
             auto_generated: false,
+            retry_at: None,
             created_at: now,
             updated_at: now,
         }
@@ -1628,6 +1690,67 @@ mod tests {
         let chosen = eng.choose_agent(&p, &task, &settings);
         assert!(p.allows(chosen));
         assert_ne!(chosen, AgentKind::Gemini);
+    }
+
+    #[test]
+    fn backoff_skips_task_until_due() {
+        let eng = engine();
+        let tmp = std::env::temp_dir();
+        let p = mk_project(&eng, &tmp.to_string_lossy(), vec![AgentKind::Claude]);
+        let mut t = mk_task(&p.id, AgentKind::Claude, true);
+        t.status = TaskStatus::NeedsReview;
+        t.attempts = 1;
+        t.retry_at = Some(Utc::now() + chrono::Duration::hours(1));
+        eng.db.upsert_task(&t).unwrap();
+        // Backing off: not picked, and recognized as waiting (suppresses roadmap).
+        assert!(eng.pick_task(&p.id).unwrap().is_none());
+        assert!(eng.has_backing_off_tasks(&p.id).unwrap());
+        // Once due, it's eligible again.
+        t.retry_at = Some(Utc::now() - chrono::Duration::minutes(1));
+        eng.db.upsert_task(&t).unwrap();
+        assert!(eng.pick_task(&p.id).unwrap().is_some());
+        assert!(!eng.has_backing_off_tasks(&p.id).unwrap());
+    }
+
+    #[test]
+    fn retry_delay_is_exponential_and_capped() {
+        let eng = engine();
+        let mut s = Settings {
+            retry_enabled: true,
+            retry_base_secs: 60,
+            retry_max_secs: 600,
+            ..Settings::default()
+        };
+        assert_eq!(eng.retry_delay(&s, 1).unwrap().num_seconds(), 60);
+        assert_eq!(eng.retry_delay(&s, 2).unwrap().num_seconds(), 120);
+        assert_eq!(eng.retry_delay(&s, 3).unwrap().num_seconds(), 240);
+        assert_eq!(eng.retry_delay(&s, 10).unwrap().num_seconds(), 600); // capped
+        s.retry_enabled = false;
+        assert!(eng.retry_delay(&s, 1).is_none());
+    }
+
+    #[test]
+    fn scheduled_tasks_are_not_retried() {
+        let eng = engine();
+        let dir = std::env::temp_dir().join(format!("orch-noretry-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join(".orchestrator/scheduled")).unwrap();
+        std::fs::write(
+            dir.join(".orchestrator/scheduled/job.md"),
+            "---\nevery: 1h\ntitle: Nightly\n---\nDo the thing.",
+        )
+        .unwrap();
+        let p = mk_project(&eng, &dir.to_string_lossy(), vec![AgentKind::Claude]);
+        eng.discover_all_scheduled().unwrap();
+        let sched = eng.db.list_scheduled(Some(&p.id)).unwrap();
+        let past = Utc::now() - chrono::Duration::minutes(1);
+        eng.db
+            .set_scheduled_run(&sched[0].id, past, Some(past))
+            .unwrap();
+        eng.fire_due_scheduled().unwrap();
+        let tasks = eng.db.list_tasks(Some(&p.id)).unwrap();
+        // Scheduled tasks get a single attempt — one failure is terminal.
+        assert_eq!(tasks[0].max_attempts, 1);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

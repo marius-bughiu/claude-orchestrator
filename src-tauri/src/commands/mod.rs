@@ -107,6 +107,7 @@ pub fn delete_task(state: State<AppState>, id: String) -> CmdResult<()> {
 pub fn run_task_now(state: State<AppState>, id: String) -> CmdResult<()> {
     let mut task = state.engine.db().get_task(&id).map_err(err)?;
     task.status = TaskStatus::Pending;
+    task.retry_at = None; // bypass any retry backoff
     task.updated_at = chrono::Utc::now();
     state.engine.db().upsert_task(&task).map_err(err)?;
     state.engine.request_tick();
@@ -120,6 +121,7 @@ pub fn retry_task(state: State<AppState>, id: String) -> CmdResult<()> {
     let mut task = state.engine.db().get_task(&id).map_err(err)?;
     task.status = TaskStatus::Pending;
     task.attempts = 0;
+    task.retry_at = None; // bypass any retry backoff
     task.updated_at = chrono::Utc::now();
     state.engine.db().upsert_task(&task).map_err(err)?;
     state.engine.request_tick();

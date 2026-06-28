@@ -133,6 +133,32 @@ export function SettingsView() {
       </section>
 
       <section className="card mb-5 p-4">
+        <h3 className="mb-1 text-sm font-semibold text-neutral-200">Retries</h3>
+        <p className="mb-3 text-xs text-neutral-500">
+          Failed tasks wait an exponentially growing backoff before retrying. Scheduled tasks are never retried — they run again on their own cadence.
+        </p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-neutral-300">
+          <input type="checkbox" checked={draft.retryEnabled} onChange={(e) => set({ retryEnabled: e.target.checked })} />
+          Retry failed tasks with backoff
+        </label>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Base backoff (seconds)</span>
+            <input type="number" min={1} className="input" value={draft.retryBaseSecs} disabled={!draft.retryEnabled}
+              onChange={(e) => set({ retryBaseSecs: Math.max(1, Number(e.target.value)) })} />
+          </label>
+          <label className="text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Max backoff (seconds)</span>
+            <input type="number" min={1} className="input" value={draft.retryMaxSecs} disabled={!draft.retryEnabled}
+              onChange={(e) => set({ retryMaxSecs: Math.max(1, Number(e.target.value)) })} />
+          </label>
+        </div>
+        <p className="mt-2 text-[11px] text-neutral-500">
+          Delay doubles each attempt: {draft.retryBaseSecs}s → {draft.retryBaseSecs * 2}s → {draft.retryBaseSecs * 4}s …, capped at {draft.retryMaxSecs}s.
+        </p>
+      </section>
+
+      <section className="card mb-5 p-4">
         <h3 className="mb-1 text-sm font-semibold text-neutral-200">Git isolation</h3>
         <p className="mb-3 text-xs text-neutral-500">Run each task in its own git worktree on a dedicated branch, so parallel agents never collide in the working tree.</p>
         <div className="flex flex-col gap-3">

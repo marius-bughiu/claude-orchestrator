@@ -139,6 +139,7 @@ pub fn create_task(db: &Db, input: CreateTaskInput) -> Result<Task> {
         max_attempts: input.max_attempts.unwrap_or(3),
         tags: input.tags,
         auto_generated: false,
+        retry_at: None,
         created_at: now,
         updated_at: now,
     };

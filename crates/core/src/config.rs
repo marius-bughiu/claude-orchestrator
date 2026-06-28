@@ -97,6 +97,12 @@ pub struct WebhookConfig {
 fn default_webhook_kind() -> String {
     "slack".to_string()
 }
+fn default_retry_base_secs() -> u64 {
+    60
+}
+fn default_retry_max_secs() -> u64 {
+    3600
+}
 
 /// Global orchestrator settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,6 +149,17 @@ pub struct Settings {
     pub auto_pr: bool,
     /// How often to re-scan projects for scheduled-task markdown files, seconds.
     pub schedule_refresh_secs: u64,
+    /// When true, failed tasks wait an (exponentially growing) backoff before
+    /// being retried instead of re-running immediately. Scheduled tasks are not
+    /// retried regardless (they run on their own cadence).
+    #[serde(default = "default_true")]
+    pub retry_enabled: bool,
+    /// Base backoff for the first retry, in seconds. Doubles each attempt.
+    #[serde(default = "default_retry_base_secs")]
+    pub retry_base_secs: u64,
+    /// Cap on the retry backoff, in seconds.
+    #[serde(default = "default_retry_max_secs")]
+    pub retry_max_secs: u64,
     /// Outbound notification webhooks (Slack / Discord / generic).
     #[serde(default)]
     pub webhooks: Vec<WebhookConfig>,
@@ -172,6 +189,9 @@ impl Default for Settings {
             auto_commit: true,
             auto_pr: false,
             schedule_refresh_secs: 300,
+            retry_enabled: true,
+            retry_base_secs: 60,
+            retry_max_secs: 3600,
             webhooks: Vec::new(),
             agents,
         }

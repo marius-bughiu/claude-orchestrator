@@ -258,6 +258,9 @@ pub struct Task {
     pub tags: Vec<String>,
     /// Set by the roadmap loop so generated tasks are distinguishable.
     pub auto_generated: bool,
+    /// Earliest time this task may be (re)scheduled. Set after a failed attempt
+    /// to enforce retry backoff; `None` means eligible immediately.
+    pub retry_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
