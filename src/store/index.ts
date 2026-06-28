@@ -17,6 +17,16 @@ export interface LogLine {
   ts: number;
 }
 
+export interface ActivityItem {
+  id: number;
+  kind: "log" | "task" | "scheduled";
+  level: string;
+  message: string;
+  ts: number;
+}
+
+let activitySeq = 1;
+
 interface StoreState {
   initialized: boolean;
   connected: boolean;
@@ -27,6 +37,8 @@ interface StoreState {
   timeline: TimelineItem[];
   scheduled: ScheduledTask[];
   logs: LogLine[];
+  activity: ActivityItem[];
+  unread: number;
 
   init: () => Promise<void>;
   refreshStatus: () => Promise<void>;
@@ -36,7 +48,13 @@ interface StoreState {
   refreshSettings: () => Promise<void>;
   refreshScheduled: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  markActivityRead: () => void;
   handleEvent: (event: OrchestratorEvent) => void;
+}
+
+function pushActivity(get: () => StoreState, set: (p: Partial<StoreState>) => void, item: Omit<ActivityItem, "id" | "ts">) {
+  const entry: ActivityItem = { ...item, id: activitySeq++, ts: Date.now() };
+  set({ activity: [entry, ...get().activity].slice(0, 100), unread: get().unread + 1 });
 }
 
 let unlisten: (() => void) | null = null;
@@ -51,6 +69,8 @@ export const useStore = create<StoreState>((set, get) => ({
   timeline: [],
   scheduled: [],
   logs: [],
+  activity: [],
+  unread: 0,
 
   init: async () => {
     if (get().initialized) return;
@@ -73,6 +93,7 @@ export const useStore = create<StoreState>((set, get) => ({
   refreshTimeline: async () => set({ timeline: await api.getTimeline(200) }),
   refreshSettings: async () => set({ settings: await api.getSettings() }),
   refreshScheduled: async () => set({ scheduled: await api.listScheduled() }),
+  markActivityRead: () => set({ unread: 0 }),
 
   refreshAll: async () => {
     const [status, projects, tasks, timeline, settings, scheduled] = await Promise.all([
@@ -99,11 +120,18 @@ export const useStore = create<StoreState>((set, get) => ({
         if (idx >= 0) tasks[idx] = event.task;
         else tasks.unshift(event.task);
         set({ tasks });
-        // Notify on a real completion/failure transition.
+        // Notify + record activity on a real completion/failure transition.
         const t = event.task;
         const becameDone = (t.status === "completed" || t.status === "failed") && prev?.status !== t.status;
-        if (becameDone && get().settings?.notificationsEnabled !== false) {
-          notify(t.status === "completed" ? "Task completed" : "Task failed", t.title);
+        if (becameDone) {
+          if (get().settings?.notificationsEnabled !== false) {
+            notify(t.status === "completed" ? "Task completed" : "Task failed", t.title);
+          }
+          pushActivity(get, set, {
+            kind: "task",
+            level: t.status === "completed" ? "info" : "error",
+            message: `Task ${t.status}: ${t.title}`,
+          });
         }
         break;
       }
@@ -121,6 +149,11 @@ export const useStore = create<StoreState>((set, get) => ({
           ...get().logs,
         ].slice(0, 200);
         set({ logs });
+        pushActivity(get, set, {
+          kind: event.message.toLowerCase().includes("scheduled") ? "scheduled" : "log",
+          level: event.level,
+          message: event.message,
+        });
         break;
       }
     }

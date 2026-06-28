@@ -113,6 +113,39 @@ pub fn run_task_now(state: State<AppState>, id: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// Reset a task to pending and clear its attempt counter so it runs again even
+/// after exhausting its retries (used for failed/needs-review tasks).
+#[tauri::command]
+pub fn retry_task(state: State<AppState>, id: String) -> CmdResult<()> {
+    let mut task = state.engine.db().get_task(&id).map_err(err)?;
+    task.status = TaskStatus::Pending;
+    task.attempts = 0;
+    task.updated_at = chrono::Utc::now();
+    state.engine.db().upsert_task(&task).map_err(err)?;
+    state.engine.request_tick();
+    Ok(())
+}
+
+/// Duplicate a task as a fresh pending task in the same project.
+#[tauri::command]
+pub fn clone_task(state: State<AppState>, id: String) -> CmdResult<Task> {
+    let t = state.engine.db().get_task(&id).map_err(err)?;
+    let input = CreateTaskInput {
+        project_id: t.project_id,
+        title: format!("{} (copy)", t.title),
+        description: t.description,
+        priority: Some(t.priority),
+        agent: if t.auto_agent { None } else { Some(t.agent) },
+        model: t.model,
+        depends_on: vec![],
+        tags: t.tags,
+        max_attempts: Some(t.max_attempts),
+    };
+    let task = service::create_task(state.engine.db(), input).map_err(err)?;
+    state.engine.request_tick();
+    Ok(task)
+}
+
 // ---- Sessions --------------------------------------------------------------
 
 #[tauri::command]

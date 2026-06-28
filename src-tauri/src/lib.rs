@@ -73,6 +73,8 @@ pub fn run() {
             commands::update_task,
             commands::delete_task,
             commands::run_task_now,
+            commands::retry_task,
+            commands::clone_task,
             commands::list_sessions,
             commands::get_session,
             commands::get_session_events,

@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { LayoutDashboard, FolderGit2, ListTodo, GanttChartSquare, Clock, Settings as SettingsIcon } from "lucide-react";
 import { UsageBar } from "./UsageBar";
 import { UpdateBanner } from "./UpdateBanner";
+import { UsageAlertBanner } from "./UsageAlertBanner";
 import { CommandPalette } from "./CommandPalette";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
@@ -25,6 +26,7 @@ export function Layout() {
       <CommandPalette />
       <UsageBar />
       <UpdateBanner />
+      <UsageAlertBanner />
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-52 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-4">
           <div className="mb-6 flex items-center gap-2 px-2">

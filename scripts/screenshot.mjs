@@ -48,6 +48,22 @@ async function capture(theme, names) {
 await capture("dark");
 await capture("light", ["dashboard", "projects"]);
 
+// Tasks with a bulk selection.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark" });
+  await ctx.addInitScript(mock);
+  const page = await ctx.newPage();
+  await page.goto(base + "/#/tasks", { waitUntil: "networkidle" });
+  await page.waitForTimeout(700);
+  const boxes = page.locator('tbody input[type="checkbox"]');
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: join(outDir, "tasks-bulk.png") });
+  console.log("shot: tasks-bulk");
+  await ctx.close();
+}
+
 // Command palette (Cmd/Ctrl+K).
 {
   const ctx = await browser.newContext({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark" });

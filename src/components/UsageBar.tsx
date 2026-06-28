@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Pause, Play, Activity, ListTodo } from "lucide-react";
 import { useStore } from "../store";
+import { ActivityCenter } from "./ActivityCenter";
 import * as api from "../api";
 import type { AgentUsage, WindowUsage } from "../api/types";
 import { AGENT_COLORS, AGENT_LABELS, formatCost, formatTokens } from "../lib/format";
@@ -109,6 +110,8 @@ export function UsageBar() {
         </span>
         {status?.draining && <span className="text-amber-300">draining…</span>}
       </div>
+
+      <ActivityCenter />
 
       <div className="ml-auto flex items-center gap-2 overflow-x-auto">
         {status?.agents.map((a) => <AgentCard key={a.agent} usage={a} />)}

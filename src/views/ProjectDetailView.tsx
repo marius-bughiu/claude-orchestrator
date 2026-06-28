@@ -10,6 +10,7 @@ import type { Project, Session } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
 import { CreateTaskModal } from "../components/CreateTaskModal";
 import { UpcomingTasks } from "../components/UpcomingTasks";
+import { ProjectHealth } from "../components/ProjectHealth";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
 import { formatCost, formatRelative } from "../lib/format";
 
@@ -218,6 +219,8 @@ export function ProjectDetailView() {
       </div>
 
       {notice && <div className="mb-4 rounded-md border border-indigo-500/30 bg-indigo-600/10 px-3 py-2 text-xs text-indigo-200">{notice}</div>}
+
+      <ProjectHealth project={project} />
 
       <div className="mb-5"><ProjectSettings project={project} /></div>
 
