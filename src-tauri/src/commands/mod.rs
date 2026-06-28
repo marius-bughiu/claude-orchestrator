@@ -376,6 +376,18 @@ pub fn prune_worktrees(state: State<AppState>, project_id: String) -> CmdResult<
     state.engine.prune_worktrees(&project_id).map_err(err)
 }
 
+#[tauri::command]
+pub fn rebase_branch(
+    state: State<AppState>,
+    project_id: String,
+    branch: String,
+) -> CmdResult<RebaseResult> {
+    state
+        .engine
+        .rebase_branch(&project_id, &branch)
+        .map_err(err)
+}
+
 // ---- Updates ---------------------------------------------------------------
 
 /// Begin draining for an update: stop scheduling new work. The UI then polls

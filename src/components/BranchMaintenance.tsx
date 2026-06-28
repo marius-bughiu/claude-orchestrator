@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { GitBranch, Trash2, RefreshCw, Eraser } from "lucide-react";
+import { GitBranch, Trash2, RefreshCw, Eraser, GitMerge } from "lucide-react";
 import * as api from "../api";
 import type { BranchInfo } from "../api/types";
 
@@ -39,6 +39,20 @@ export function BranchMaintenance({ projectId }: { projectId: string }) {
     }
   };
 
+  const rebase = async (name: string) => {
+    setBusy(name);
+    setError(null);
+    try {
+      const r = await api.rebaseBranch(projectId, name);
+      if (r.status === "conflicts" || r.status === "error") setError(r.detail);
+      load();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   // Nothing to show and no error: keep the panel out of the way.
   if (branches && branches.length === 0 && !error) return null;
 
@@ -73,8 +87,23 @@ export function BranchMaintenance({ projectId }: { projectId: string }) {
                   conflicts
                 </span>
               )}
+              {!b.merged && b.behind > 0 && (
+                <span className="chip border border-amber-500/30 text-amber-400" title={`Base is ${b.behind} commit(s) ahead`}>
+                  {b.behind} behind
+                </span>
+              )}
+              {!b.merged && !b.active && b.behind > 0 && (
+                <button
+                  className="btn ml-auto !px-2 !py-1"
+                  disabled={busy === b.name}
+                  onClick={() => rebase(b.name)}
+                  title="Rebase this branch onto the base branch"
+                >
+                  <GitMerge size={13} /> {busy === b.name ? "Rebasing…" : "Rebase"}
+                </button>
+              )}
               <button
-                className="btn btn-danger ml-auto !px-2 !py-1"
+                className={`btn btn-danger !px-2 !py-1 ${!b.merged && !b.active && b.behind > 0 ? "" : "ml-auto"}`}
                 disabled={b.active || busy === b.name}
                 onClick={() => del(b.name)}
                 title={b.active ? "A running session is using this branch" : "Delete branch"}

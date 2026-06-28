@@ -8,6 +8,7 @@ import type {
   AgentStat,
   AgentHealth,
   BranchInfo,
+  RebaseResult,
   OrchestratorEvent,
   OrchestratorStatus,
   GitStatus,
@@ -133,6 +134,8 @@ export const deleteBranch = (projectId: string, branch: string) =>
   invoke<void>("delete_branch", { projectId, branch });
 export const pruneWorktrees = (projectId: string) =>
   invoke<void>("prune_worktrees", { projectId });
+export const rebaseBranch = (projectId: string, branch: string) =>
+  invoke<RebaseResult>("rebase_branch", { projectId, branch });
 
 // ---- Updates ---------------------------------------------------------------
 export const beginDrain = () => invoke<void>("begin_drain");

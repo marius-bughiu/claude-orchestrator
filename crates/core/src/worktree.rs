@@ -5,7 +5,7 @@
 //! gracefully when they're unavailable.
 
 use crate::error::{CoreError, Result};
-use crate::models::{BranchInfo, DiffFile, SessionDiff};
+use crate::models::{BranchInfo, DiffFile, RebaseResult, SessionDiff};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -216,20 +216,78 @@ pub fn list_orchestrator_branches(repo: &Path) -> Result<Vec<BranchInfo>> {
     let mut branches = Vec::new();
     for name in all.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
         let is_merged = merged.contains(&name);
-        // Only probe unmerged branches for conflicts (merged ones are moot).
-        let conflicted = if is_merged {
-            None
+        // Only probe unmerged branches for conflicts/staleness (merged are moot).
+        let (conflicted, behind) = if is_merged {
+            (None, 0)
         } else {
-            conflicts_with(repo, &base, name)
+            let conflicted = conflicts_with(repo, &base, name);
+            // Commits on base not yet in this branch = how stale it is.
+            let behind = git_ok(repo, &["rev-list", "--count", &format!("{name}..{base}")])
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(0);
+            (conflicted, behind)
         };
         branches.push(BranchInfo {
             name: name.to_string(),
             merged: is_merged,
             active: false,
             conflicted,
+            behind,
         });
     }
     Ok(branches)
+}
+
+/// Rebase an orchestrator branch onto the repo's base branch using a throwaway
+/// worktree, so the repo's own working tree is never touched. On conflict the
+/// rebase is aborted and reported, leaving the branch unchanged.
+pub fn rebase_onto_base(repo: &Path, branch: &str) -> Result<RebaseResult> {
+    let base = current_branch(repo).unwrap_or_else(|| "HEAD".into());
+    // Nothing to do if already up to date.
+    let behind: u32 = git_ok(repo, &["rev-list", "--count", &format!("{branch}..{base}")])
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+    if behind == 0 {
+        return Ok(RebaseResult {
+            status: "up_to_date".into(),
+            detail: format!("{branch} is already up to date with {base}"),
+        });
+    }
+
+    let tmp = worktrees_root().join(format!("rebase-{}", uuid::Uuid::new_v4()));
+    if let Some(parent) = tmp.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    git_ok(repo, &["worktree", "add", &tmp.to_string_lossy(), branch])?;
+
+    let out = git(&tmp, &["rebase", &base]);
+    let result = match out {
+        Ok(o) if o.status.success() => RebaseResult {
+            status: "rebased".into(),
+            detail: format!("rebased {branch} onto {base} ({behind} commit(s))"),
+        },
+        Ok(_) => {
+            let _ = git(&tmp, &["rebase", "--abort"]);
+            RebaseResult {
+                status: "conflicts".into(),
+                detail: format!("rebase onto {base} hit conflicts; resolve {branch} manually"),
+            }
+        }
+        Err(e) => RebaseResult {
+            status: "error".into(),
+            detail: e.to_string(),
+        },
+    };
+
+    let _ = git(
+        repo,
+        &["worktree", "remove", "--force", &tmp.to_string_lossy()],
+    );
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = git(repo, &["worktree", "prune"]);
+    Ok(result)
 }
 
 /// Prune stale worktree metadata for a repo. Best-effort.
@@ -500,6 +558,66 @@ mod tests {
         assert_eq!(
             conflicts_with(&repo, &base, "orchestrator/clean-2"),
             Some(false)
+        );
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn rebase_brings_stale_branch_up_to_date() {
+        let repo = init_repo();
+        let cfg = |args: &[&str]| {
+            Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+        };
+        // Branch off the first commit, then advance base on a different file so
+        // the branch is behind but does not conflict.
+        let first = git_ok(&repo, &["rev-list", "--max-parents=0", "HEAD"]).unwrap();
+        cfg(&["branch", "orchestrator/stale-1", first.trim()]);
+        std::fs::write(repo.join("base-only.txt"), "base\n").unwrap();
+        cfg(&["add", "-A"]);
+        cfg(&["commit", "-qm", "advance base"]);
+
+        // Put a commit on the branch so a rebase actually moves it.
+        let wt = worktrees_root().join(format!("st-{}", uuid::Uuid::new_v4()));
+        cfg(&[
+            "worktree",
+            "add",
+            &wt.to_string_lossy(),
+            "orchestrator/stale-1",
+        ]);
+        std::fs::write(wt.join("branch-only.txt"), "branch\n").unwrap();
+        commit_all(&wt, "branch work").unwrap();
+        remove(&repo, &wt).unwrap();
+
+        // It is behind by one (the base advance).
+        let before = list_orchestrator_branches(&repo).unwrap();
+        let stale = before
+            .iter()
+            .find(|b| b.name == "orchestrator/stale-1")
+            .unwrap();
+        assert_eq!(stale.behind, 1);
+
+        let res = rebase_onto_base(&repo, "orchestrator/stale-1").unwrap();
+        assert_eq!(res.status, "rebased", "{}", res.detail);
+
+        // After rebasing it is no longer behind.
+        let after = list_orchestrator_branches(&repo).unwrap();
+        let stale = after
+            .iter()
+            .find(|b| b.name == "orchestrator/stale-1")
+            .unwrap();
+        assert_eq!(stale.behind, 0);
+
+        // Rebasing again is a no-op.
+        assert_eq!(
+            rebase_onto_base(&repo, "orchestrator/stale-1")
+                .unwrap()
+                .status,
+            "up_to_date"
         );
         std::fs::remove_dir_all(&repo).ok();
     }

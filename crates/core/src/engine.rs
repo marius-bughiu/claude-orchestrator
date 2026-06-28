@@ -948,6 +948,30 @@ impl Engine {
         Ok(())
     }
 
+    /// Rebase an orchestrator branch onto its base branch. Refuses a branch a
+    /// running session is using (its worktree is checked out).
+    pub fn rebase_branch(&self, project_id: &str, branch: &str) -> Result<RebaseResult> {
+        if !branch.starts_with(worktree::BRANCH_PREFIX) {
+            return Err(CoreError::Invalid(format!(
+                "refusing to rebase non-orchestrator branch {branch}"
+            )));
+        }
+        let in_use = self
+            .db
+            .active_sessions()?
+            .into_iter()
+            .any(|s| s.branch.as_deref() == Some(branch));
+        if in_use {
+            return Err(CoreError::Invalid(format!(
+                "branch {branch} is in use by a running session"
+            )));
+        }
+        let project = self.db.get_project(project_id)?;
+        let result = worktree::rebase_onto_base(Path::new(&project.path), branch)?;
+        self.log("info", format!("rebase {branch}: {}", result.detail));
+        Ok(result)
+    }
+
     /// Prune stale git worktree metadata for a project.
     pub fn prune_worktrees(&self, project_id: &str) -> Result<()> {
         let project = self.db.get_project(project_id)?;

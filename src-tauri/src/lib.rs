@@ -103,6 +103,7 @@ pub fn run() {
             commands::list_branches,
             commands::delete_branch,
             commands::prune_worktrees,
+            commands::rebase_branch,
             commands::begin_drain,
             commands::cancel_drain,
         ])

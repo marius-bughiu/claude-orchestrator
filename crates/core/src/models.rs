@@ -488,6 +488,19 @@ pub struct BranchInfo {
     /// Whether the branch merges cleanly onto the base: `Some(true)` = conflicts,
     /// `Some(false)` = clean, `None` = could not determine (or already merged).
     pub conflicted: Option<bool>,
+    /// How many commits the base branch is ahead of this branch (i.e. how stale
+    /// it is). 0 when up to date or already merged.
+    pub behind: u32,
+}
+
+/// Outcome of attempting to rebase a task branch onto its base.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RebaseResult {
+    /// "rebased" | "up_to_date" | "conflicts" | "error".
+    pub status: String,
+    /// Human-readable detail.
+    pub detail: String,
 }
 
 /// A project's accumulated memory: auto-generated context and learned lessons.

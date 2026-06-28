@@ -240,6 +240,12 @@ export interface BranchInfo {
   merged: boolean;
   active: boolean;
   conflicted: boolean | null;
+  behind: number;
+}
+
+export interface RebaseResult {
+  status: string;
+  detail: string;
 }
 
 export interface PullRequest {

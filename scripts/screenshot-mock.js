@@ -153,15 +153,17 @@ window.__TAURI_INTERNALS__ = {
       case "list_branches": {
         const map = {
           p1: [
-            { name: "orchestrator/add-streaming-1a2b3c4d", merged: false, active: true, conflicted: false },
-            { name: "orchestrator/fix-scheduler-99aa", merged: false, active: false, conflicted: true },
-            { name: "orchestrator/docs-sweep-7f3e", merged: true, active: false, conflicted: null },
+            { name: "orchestrator/add-streaming-1a2b3c4d", merged: false, active: true, conflicted: false, behind: 0 },
+            { name: "orchestrator/fix-scheduler-99aa", merged: false, active: false, conflicted: true, behind: 5 },
+            { name: "orchestrator/refresh-usagebar-3c1d", merged: false, active: false, conflicted: false, behind: 2 },
+            { name: "orchestrator/docs-sweep-7f3e", merged: true, active: false, conflicted: null, behind: 0 },
           ],
         };
         return Promise.resolve(map[args.projectId] || []);
       }
       case "delete_branch":
       case "prune_worktrees": return Promise.resolve(null);
+      case "rebase_branch": return Promise.resolve({ status: "rebased", detail: "rebased onto main (2 commits)" });
       case "session_diff": return Promise.resolve({
         available: true,
         branch: "orchestrator/add-streaming-1a2b3c4d",
