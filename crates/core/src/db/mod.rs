@@ -498,6 +498,83 @@ impl Db {
         .map_err(Into::into)
     }
 
+    /// Per-agent performance comparison across finished task sessions. Cost is
+    /// read from each session's stored usage; duration from its timestamps.
+    pub fn agent_stats(&self) -> Result<Vec<AgentStat>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT agent, status, usage, started_at, ended_at
+             FROM sessions
+             WHERE kind = 'task' AND status IN ('completed','failed','timed_out')",
+        )?;
+        let rows = stmt
+            .query_map([], |r| {
+                let agent =
+                    AgentKind::from_str(&r.get::<_, String>(0)?).unwrap_or(AgentKind::Claude);
+                let status = r.get::<_, String>(1)?;
+                let usage: TokenUsage =
+                    serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or_default();
+                let started: Option<DateTime<Utc>> = r.get(3)?;
+                let ended: Option<DateTime<Utc>> = r.get(4)?;
+                let dur = match (started, ended) {
+                    (Some(s), Some(e)) => Some((e - s).num_milliseconds() as f64 / 1000.0),
+                    _ => None,
+                };
+                Ok((agent, status, usage.total_cost_usd, dur))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+
+        let mut out = Vec::new();
+        for agent in AgentKind::ALL {
+            let mut sessions = 0u32;
+            let mut completed = 0u32;
+            let mut failed = 0u32;
+            let mut total_cost = 0.0f64;
+            let mut dur_sum = 0.0f64;
+            let mut dur_n = 0u32;
+            for (a, status, cost, dur) in rows.iter() {
+                if *a != agent {
+                    continue;
+                }
+                sessions += 1;
+                total_cost += cost;
+                if status == "completed" {
+                    completed += 1;
+                } else {
+                    failed += 1;
+                }
+                if let Some(d) = dur {
+                    dur_sum += d;
+                    dur_n += 1;
+                }
+            }
+            out.push(AgentStat {
+                agent,
+                sessions,
+                completed,
+                failed,
+                success_rate: if sessions > 0 {
+                    completed as f64 / sessions as f64
+                } else {
+                    0.0
+                },
+                avg_cost_usd: if sessions > 0 {
+                    total_cost / sessions as f64
+                } else {
+                    0.0
+                },
+                total_cost_usd: total_cost,
+                avg_duration_secs: if dur_n > 0 {
+                    dur_sum / dur_n as f64
+                } else {
+                    0.0
+                },
+            });
+        }
+        Ok(out)
+    }
+
     // ---- Scheduled tasks ----------------------------------------------------
 
     pub fn upsert_scheduled(&self, s: &ScheduledTask) -> Result<()> {

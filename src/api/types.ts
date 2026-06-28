@@ -190,7 +190,34 @@ export interface Settings {
   autoCommit: boolean;
   autoPr: boolean;
   scheduleRefreshSecs: number;
+  webhooks: WebhookConfig[];
   agents: Record<string, AgentConfig>;
+}
+
+export interface AgentStat {
+  agent: AgentKind;
+  sessions: number;
+  completed: number;
+  failed: number;
+  successRate: number;
+  avgCostUsd: number;
+  totalCostUsd: number;
+  avgDurationSecs: number;
+}
+
+export interface ProjectMemory {
+  context: string | null;
+  lessons: string | null;
+}
+
+export interface WebhookConfig {
+  id: string;
+  name: string;
+  url: string;
+  kind: string;
+  enabled: boolean;
+  onTaskComplete: boolean;
+  onTaskFail: boolean;
 }
 
 export interface ScheduledTask {

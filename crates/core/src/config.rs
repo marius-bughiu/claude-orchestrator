@@ -69,6 +69,35 @@ impl Default for AgentConfig {
     }
 }
 
+/// An outbound notification webhook. Posts a JSON payload (shaped for the
+/// target service) whenever a matching orchestrator event fires.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookConfig {
+    /// Stable id (used by the UI for list keys / editing).
+    pub id: String,
+    /// Human label.
+    #[serde(default)]
+    pub name: String,
+    /// Destination URL.
+    pub url: String,
+    /// Payload shape: "slack", "discord", or "generic".
+    #[serde(default = "default_webhook_kind")]
+    pub kind: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Fire when a task completes successfully.
+    #[serde(default = "default_true")]
+    pub on_task_complete: bool,
+    /// Fire when a task fails (exhausted retries / unrecoverable error).
+    #[serde(default = "default_true")]
+    pub on_task_fail: bool,
+}
+
+fn default_webhook_kind() -> String {
+    "slack".to_string()
+}
+
 /// Global orchestrator settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -114,6 +143,9 @@ pub struct Settings {
     pub auto_pr: bool,
     /// How often to re-scan projects for scheduled-task markdown files, seconds.
     pub schedule_refresh_secs: u64,
+    /// Outbound notification webhooks (Slack / Discord / generic).
+    #[serde(default)]
+    pub webhooks: Vec<WebhookConfig>,
     /// Per-agent configuration, keyed by agent name.
     pub agents: BTreeMap<String, AgentConfig>,
 }
@@ -140,6 +172,7 @@ impl Default for Settings {
             auto_commit: true,
             auto_pr: false,
             schedule_refresh_secs: 300,
+            webhooks: Vec::new(),
             agents,
         }
     }

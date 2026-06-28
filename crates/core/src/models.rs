@@ -392,6 +392,36 @@ pub struct UsagePoint {
     pub sessions: u32,
 }
 
+/// Aggregate performance comparison for one agent across its finished task
+/// sessions (roadmap/verify sessions excluded). Surfaced in analytics so users
+/// can compare agents by reliability, cost, and speed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStat {
+    pub agent: AgentKind,
+    /// Finished task sessions counted (completed + failed + timed out).
+    pub sessions: u32,
+    pub completed: u32,
+    pub failed: u32,
+    /// Fraction of counted sessions that completed successfully (0.0–1.0).
+    pub success_rate: f64,
+    /// Mean cost per counted session, USD.
+    pub avg_cost_usd: f64,
+    pub total_cost_usd: f64,
+    /// Mean wall-clock duration (seconds) over sessions with both timestamps.
+    pub avg_duration_secs: f64,
+}
+
+/// A project's accumulated memory: auto-generated context and learned lessons.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectMemory {
+    /// Contents of `.orchestrator/context.md`, if present.
+    pub context: Option<String>,
+    /// Contents of `.orchestrator/lessons.md`, if present.
+    pub lessons: Option<String>,
+}
+
 /// Snapshot of the whole orchestrator for the header / status views.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

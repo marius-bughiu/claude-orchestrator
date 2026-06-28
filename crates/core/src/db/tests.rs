@@ -198,6 +198,74 @@ fn usage_series_buckets_by_day() {
 }
 
 #[test]
+fn agent_stats_compares_agents() {
+    let db = Db::open_in_memory().unwrap();
+    db.upsert_project(&project("p1")).unwrap();
+    let base = "2026-06-01T10:00:00Z".parse::<DateTime<Utc>>().unwrap();
+
+    let mk = |id: &str, agent: AgentKind, status: SessionStatus, cost: f64, secs: i64| Session {
+        id: id.into(),
+        task_id: None,
+        project_id: "p1".into(),
+        agent,
+        kind: SessionKind::Task,
+        status,
+        agent_session_id: None,
+        model: None,
+        prompt: String::new(),
+        result_text: None,
+        error: None,
+        exit_code: None,
+        usage: TokenUsage {
+            total_cost_usd: cost,
+            ..Default::default()
+        },
+        branch: None,
+        pr_url: None,
+        started_at: Some(base),
+        ended_at: Some(base + chrono::Duration::seconds(secs)),
+        created_at: base,
+    };
+
+    db.upsert_session(&mk(
+        "a",
+        AgentKind::Claude,
+        SessionStatus::Completed,
+        1.0,
+        10,
+    ))
+    .unwrap();
+    db.upsert_session(&mk("b", AgentKind::Claude, SessionStatus::Failed, 0.5, 20))
+        .unwrap();
+    db.upsert_session(&mk(
+        "c",
+        AgentKind::Gemini,
+        SessionStatus::Completed,
+        0.2,
+        4,
+    ))
+    .unwrap();
+    // Verify/roadmap sessions are excluded from the stats.
+    let mut verify = mk("d", AgentKind::Claude, SessionStatus::Completed, 9.0, 99);
+    verify.kind = SessionKind::Verify;
+    db.upsert_session(&verify).unwrap();
+
+    let stats = db.agent_stats().unwrap();
+    let claude = stats.iter().find(|s| s.agent == AgentKind::Claude).unwrap();
+    assert_eq!(claude.sessions, 2);
+    assert_eq!(claude.completed, 1);
+    assert_eq!(claude.failed, 1);
+    assert!((claude.success_rate - 0.5).abs() < 1e-9);
+    assert!((claude.total_cost_usd - 1.5).abs() < 1e-9);
+    assert!((claude.avg_cost_usd - 0.75).abs() < 1e-9);
+    assert!((claude.avg_duration_secs - 15.0).abs() < 1e-9);
+
+    let gemini = stats.iter().find(|s| s.agent == AgentKind::Gemini).unwrap();
+    assert_eq!(gemini.sessions, 1);
+    assert!((gemini.success_rate - 1.0).abs() < 1e-9);
+}
+
+#[test]
 fn orphan_reconciliation() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();

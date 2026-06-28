@@ -17,12 +17,14 @@ pub mod engine;
 pub mod error;
 pub mod event;
 pub mod git;
+pub mod github;
 pub mod models;
 pub mod parse;
 pub mod runner;
 pub mod scheduled;
 pub mod service;
 pub mod util;
+pub mod webhook;
 pub mod worktree;
 
 pub use config::{AgentConfig, PermissionMode, Settings};

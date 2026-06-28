@@ -300,6 +300,30 @@ pub fn usage_series(
         .map_err(err)
 }
 
+#[tauri::command]
+pub fn agent_stats(state: State<AppState>) -> CmdResult<Vec<AgentStat>> {
+    state.engine.db().agent_stats().map_err(err)
+}
+
+// ---- Project memory --------------------------------------------------------
+
+#[tauri::command]
+pub fn project_memory(state: State<AppState>, id: String) -> CmdResult<ProjectMemory> {
+    state.engine.project_memory(&id).map_err(err)
+}
+
+#[tauri::command]
+pub fn generate_project_context(state: State<AppState>, id: String) -> CmdResult<String> {
+    state.engine.generate_project_context(&id).map_err(err)
+}
+
+// ---- GitHub ----------------------------------------------------------------
+
+#[tauri::command]
+pub fn import_github_issues(state: State<AppState>, project_id: String) -> CmdResult<u32> {
+    state.engine.import_github_issues(&project_id).map_err(err)
+}
+
 // ---- Updates ---------------------------------------------------------------
 
 /// Begin draining for an update: stop scheduling new work. The UI then polls

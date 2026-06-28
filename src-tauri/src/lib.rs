@@ -92,6 +92,10 @@ pub fn run() {
             commands::set_scheduled_enabled,
             commands::upcoming_tasks,
             commands::usage_series,
+            commands::agent_stats,
+            commands::project_memory,
+            commands::generate_project_context,
+            commands::import_github_issues,
             commands::begin_drain,
             commands::cancel_drain,
         ])

@@ -5,10 +5,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AddProjectInput,
   CreateTaskInput,
+  AgentStat,
   OrchestratorEvent,
   OrchestratorStatus,
   GitStatus,
   Project,
+  ProjectMemory,
   ScheduledTask,
   UpcomingTask,
   UsagePoint,
@@ -99,6 +101,18 @@ export const usageSeries = (
     agent: agent ?? null,
     limit: limit ?? null,
   });
+
+export const agentStats = () => invoke<AgentStat[]>("agent_stats");
+
+// ---- Project memory --------------------------------------------------------
+export const projectMemory = (id: string) =>
+  invoke<ProjectMemory>("project_memory", { id });
+export const generateProjectContext = (id: string) =>
+  invoke<string>("generate_project_context", { id });
+
+// ---- GitHub ----------------------------------------------------------------
+export const importGithubIssues = (projectId: string) =>
+  invoke<number>("import_github_issues", { projectId });
 
 // ---- Updates ---------------------------------------------------------------
 export const beginDrain = () => invoke<void>("begin_drain");

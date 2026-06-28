@@ -762,9 +762,137 @@ impl Engine {
             prompt.push_str(preamble.trim_end());
             prompt.push_str("\n\n---\n\n");
         }
+        // Project memory: auto-generated context and learned lessons steer the
+        // agent before the task itself.
+        if let Some(context) = conventions::project_context(&project.path) {
+            let context = context.trim();
+            if !context.is_empty() {
+                prompt.push_str("## Project context\n\n");
+                prompt.push_str(context);
+                prompt.push_str("\n\n---\n\n");
+            }
+        }
+        if let Some(lessons) = conventions::lessons(&project.path) {
+            let lessons = lessons.trim();
+            if !lessons.is_empty() {
+                prompt.push_str("## Lessons from previous work (apply these)\n\n");
+                prompt.push_str(lessons);
+                prompt.push_str("\n\n---\n\n");
+            }
+        }
         prompt.push_str(&format!("# Task: {}\n\n", task.title));
         prompt.push_str(&task.description);
         prompt
+    }
+
+    /// Regenerate `.orchestrator/context.md` for a project from its repo
+    /// contents. Returns the generated markdown.
+    pub fn generate_project_context(&self, project_id: &str) -> Result<String> {
+        let project = self.db.get_project(project_id)?;
+        let content = conventions::generate_context(&project.path)?;
+        conventions::write_context(&project.path, &content)?;
+        self.log(
+            "info",
+            format!("regenerated project context for {}", project.name),
+        );
+        Ok(content)
+    }
+
+    /// Read a project's accumulated memory (context + lessons) for display.
+    pub fn project_memory(&self, project_id: &str) -> Result<ProjectMemory> {
+        let project = self.db.get_project(project_id)?;
+        Ok(conventions::memory(&project.path))
+    }
+
+    /// Import open GitHub issues for a project as pending tasks via the `gh`
+    /// CLI. Issues already imported (tagged `gh-issue-<n>`) are skipped. Returns
+    /// the number of new tasks created.
+    pub fn import_github_issues(self: &Arc<Self>, project_id: &str) -> Result<u32> {
+        let project = self.db.get_project(project_id)?;
+        if !crate::github::available() {
+            return Err(CoreError::Other(
+                "the GitHub CLI `gh` is not installed or not on PATH".into(),
+            ));
+        }
+        let issues = crate::github::list_open_issues(&project.path, 100)?;
+        let existing = self.db.list_tasks(Some(project_id))?;
+        let now = Utc::now();
+        let mut created = 0u32;
+        for issue in issues {
+            let tag = crate::github::issue_tag(issue.number);
+            if existing.iter().any(|t| t.tags.contains(&tag)) {
+                continue;
+            }
+            let mut description = issue.body.trim().to_string();
+            if description.is_empty() {
+                description = "(no description provided in the issue)".into();
+            }
+            if !issue.url.is_empty() {
+                description.push_str(&format!("\n\n---\nGitHub issue: {}", issue.url));
+            }
+            let mut tags = vec!["github".to_string(), tag];
+            tags.extend(issue.label_names());
+            let task = Task {
+                id: Uuid::new_v4().to_string(),
+                project_id: project.id.clone(),
+                title: format!("#{} {}", issue.number, issue.title),
+                description,
+                status: TaskStatus::Pending,
+                priority: 50,
+                agent: project.default_agent,
+                auto_agent: true,
+                model: None,
+                parent_id: None,
+                depends_on: vec![],
+                attempts: 0,
+                max_attempts: 3,
+                tags,
+                auto_generated: true,
+                created_at: now,
+                updated_at: now,
+            };
+            self.db.upsert_task(&task)?;
+            self.emit(OrchestratorEvent::TaskUpdated { task });
+            created += 1;
+        }
+        if created > 0 {
+            self.log(
+                "info",
+                format!("imported {created} GitHub issue(s) for {}", project.name),
+            );
+            self.request_tick();
+        }
+        Ok(created)
+    }
+
+    /// Fire any configured webhooks that want this event. Best-effort, async,
+    /// fire-and-forget (delivery runs on a blocking thread; failures are logged).
+    fn notify_webhooks(&self, event: &str, title: &str, body: &str, link: Option<String>) {
+        let settings = self.db.get_settings().unwrap_or_default();
+        let targets: Vec<_> = settings
+            .webhooks
+            .iter()
+            .filter(|w| crate::webhook::wants(w, event))
+            .cloned()
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let mut n = crate::webhook::Notification::new(event, title, body);
+        n.link = link;
+        for cfg in targets {
+            let cfg = cfg.clone();
+            let n = n.clone();
+            let sink = self.sink.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = crate::webhook::deliver(&cfg, &n) {
+                    sink.emit(OrchestratorEvent::Log {
+                        level: "warn".into(),
+                        message: format!("webhook '{}' failed: {e}", cfg.name),
+                    });
+                }
+            });
+        }
     }
 
     /// Spawn the async job that runs a session to completion, persists/streams
@@ -1013,10 +1141,17 @@ impl Engine {
                 }
                 Some(v) => {
                     let feedback = if v.follow_up.trim().is_empty() {
-                        v.reason
+                        v.reason.clone()
                     } else {
-                        v.follow_up
+                        v.follow_up.clone()
                     };
+                    // Record the reviewer's reason as a durable lesson so future
+                    // tasks in this project benefit from it.
+                    if !v.reason.trim().is_empty() {
+                        if let Err(e) = conventions::append_lesson(&project.path, &v.reason) {
+                            self.log("warn", format!("could not record lesson: {e}"));
+                        }
+                    }
                     task.description = append_feedback(&task.description, &feedback);
                     task.status = if task.attempts >= task.max_attempts {
                         TaskStatus::Failed
@@ -1040,6 +1175,26 @@ impl Engine {
 
         // Commit / PR / clean up the worktree (no-op when not isolated).
         self.finalize_worktree(&project, session, &task, completed);
+
+        // Outbound notifications for terminal outcomes.
+        match task.status {
+            TaskStatus::Completed => self.notify_webhooks(
+                "task_complete",
+                &format!("✅ Task completed: {}", task.title),
+                &format!("Project {} — {} attempt(s)", project.name, task.attempts),
+                self.db.get_session(&session.id).ok().and_then(|s| s.pr_url),
+            ),
+            TaskStatus::Failed => self.notify_webhooks(
+                "task_fail",
+                &format!("❌ Task failed: {}", task.title),
+                &format!(
+                    "Project {} — gave up after {} attempt(s)",
+                    project.name, task.attempts
+                ),
+                None,
+            ),
+            _ => {}
+        }
 
         self.db.upsert_task(&task)?;
         self.emit(OrchestratorEvent::TaskUpdated { task });
