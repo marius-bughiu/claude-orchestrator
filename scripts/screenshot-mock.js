@@ -79,7 +79,8 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const settings = {
-    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, scheduleRefreshSecs: 300,
+    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300,
+    webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true }],
     agents: {
       claude: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: 25, tokenLimit: null }, windowHours: 5, enabled: true },
       gemini: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: null, tokenLimit: null }, windowHours: 5, enabled: true },
@@ -87,7 +88,7 @@ window.__SHOT_MOCK__ = (() => {
     },
   };
 
-  const session = { id: "s1", taskId: "t1", projectId: "p1", agent: "claude", kind: "task", status: "running", agentSessionId: "abc-123", model: "claude-opus-4", prompt: "# Task: Add partial-message streaming to the session view\n\nImplement incremental token rendering...", resultText: null, error: null, exitCode: null, usage: usage(82000, 14000, 190000, 0.42, 4), startedAt: iso(-180e3), endedAt: null, createdAt: iso(-200e3) };
+  const session = { id: "s1", taskId: "t1", projectId: "p1", agent: "claude", kind: "task", status: "running", agentSessionId: "abc-123", model: "claude-opus-4", prompt: "# Task: Add partial-message streaming to the session view\n\nImplement incremental token rendering...", resultText: null, error: null, exitCode: null, usage: usage(82000, 14000, 190000, 0.42, 4), branch: "orchestrator/add-streaming-1a2b3c4d", prUrl: null, startedAt: iso(-180e3), endedAt: null, createdAt: iso(-200e3) };
   const sessionEvents = [
     { id: 1, sessionId: "s1", kind: "init", text: "session initialized (claude-opus-4)", data: null, createdAt: iso(-180e3) },
     { id: 2, sessionId: "s1", kind: "assistant", text: "I'll start by locating the session view component and the event stream handler.", data: null, createdAt: iso(-175e3) },
@@ -126,6 +127,15 @@ window.__TAURI_INTERNALS__ = {
       case "get_session_events": return Promise.resolve(m.sessionEvents);
       case "list_sessions": return Promise.resolve([m.session]);
       case "project_conventions": return Promise.resolve(true);
+      case "agent_stats": return Promise.resolve([
+        { agent: "claude", sessions: 42, completed: 38, failed: 4, successRate: 0.905, avgCostUsd: 0.31, totalCostUsd: 13.02, avgDurationSecs: 154 },
+        { agent: "gemini", sessions: 11, completed: 8, failed: 3, successRate: 0.727, avgCostUsd: 0.12, totalCostUsd: 1.32, avgDurationSecs: 98 },
+        { agent: "codex", sessions: 0, completed: 0, failed: 0, successRate: 0, avgCostUsd: 0, totalCostUsd: 0, avgDurationSecs: 0 },
+      ]);
+      case "project_memory": return Promise.resolve({
+        context: "# Project context\n\nA Tauri 2 desktop app orchestrating coding agents.\n\n## File types\n- `.rs` — 24 file(s)\n- `.tsx` — 31 file(s)",
+        lessons: "# Lessons\n\n- Always run the test suite before finishing.\n- Keep changes scoped to the task.",
+      });
       case "project_git_status": {
         const map = {
           p1: { available: true, branch: "main", dirty: true, ahead: 2, behind: 0, lastCommit: "a1b2c3d", lastSubject: "wire up dashboards" },

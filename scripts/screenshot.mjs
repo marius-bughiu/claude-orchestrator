@@ -13,6 +13,7 @@ const routes = [
   ["projects", "/#/projects"],
   ["project-detail", "/#/projects/p1"],
   ["tasks", "/#/tasks"],
+  ["board", "/#/board"],
   ["scheduled", "/#/scheduled"],
   ["timeline", "/#/timeline"],
   ["settings", "/#/settings"],

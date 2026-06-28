@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  ArrowLeft, Plus, Sparkles, FolderOpen, FileCog, Trash2, Save,
+  ArrowLeft, Plus, Sparkles, FolderOpen, FileCog, Trash2, Save, Github,
 } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
@@ -11,6 +11,7 @@ import { TaskTable } from "../components/TaskTable";
 import { CreateTaskModal } from "../components/CreateTaskModal";
 import { UpcomingTasks } from "../components/UpcomingTasks";
 import { ProjectHealth } from "../components/ProjectHealth";
+import { ProjectMemoryPanel } from "../components/ProjectMemoryPanel";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
 import { formatCost, formatRelative } from "../lib/format";
 
@@ -170,6 +171,7 @@ export function ProjectDetailView() {
   const refreshProjects = useStore((s) => s.refreshProjects);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const project = projects.find((p) => p.id === id);
   const projectTasks = useMemo(() => tasks.filter((t) => t.projectId === id), [tasks, id]);
@@ -197,6 +199,18 @@ export function ProjectDetailView() {
     await refreshProjects();
     navigate("/projects");
   };
+  const importIssues = async () => {
+    setImporting(true);
+    try {
+      const n = await api.importGithubIssues(project.id);
+      setNotice(n > 0 ? `Imported ${n} GitHub issue(s) as tasks.` : "No new GitHub issues to import.");
+    } catch (e) {
+      setNotice(`GitHub import failed: ${e}`);
+    } finally {
+      setImporting(false);
+      setTimeout(() => setNotice(null), 4000);
+    }
+  };
 
   return (
     <div className="p-6">
@@ -211,6 +225,7 @@ export function ProjectDetailView() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn" onClick={triggerRoadmap}><Sparkles size={14} /> Run roadmap</button>
+          <button className="btn" onClick={importIssues} disabled={importing}><Github size={14} /> {importing ? "Importing…" : "Import issues"}</button>
           <button className="btn" onClick={scaffold}><FileCog size={14} /> Scaffold</button>
           <button className="btn" onClick={() => openPath(project.path)}><FolderOpen size={14} /> Open</button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={14} /> Task</button>
@@ -223,6 +238,8 @@ export function ProjectDetailView() {
       <ProjectHealth project={project} />
 
       <div className="mb-5"><ProjectSettings project={project} /></div>
+
+      <div className="mb-5"><ProjectMemoryPanel projectId={project.id} /></div>
 
       <UpcomingTasks projectId={project.id} />
 

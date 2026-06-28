@@ -8,6 +8,7 @@ import * as api from "../api";
 import type { AgentKind, UsagePoint } from "../api/types";
 import { useStore } from "../store";
 import { formatCost, formatTokens, AGENT_LABELS } from "../lib/format";
+import { AgentComparison } from "../components/AgentComparison";
 
 type Gran = "day" | "month" | "year";
 const GRANS: { label: string; value: Gran; limit: number }[] = [
@@ -151,6 +152,8 @@ export function DashboardView() {
         <StatCard icon={<Coins size={20} />} label="Total tokens" value={formatTokens(totals.tokens)} />
         <StatCard icon={<PlayCircle size={20} />} label="Sessions" value={totals.sessions.toLocaleString()} />
       </div>
+
+      <AgentComparison />
 
       {loading ? (
         <div className="py-16 text-center text-sm text-neutral-500">Loading…</div>

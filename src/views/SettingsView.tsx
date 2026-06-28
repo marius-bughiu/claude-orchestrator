@@ -2,8 +2,16 @@ import { useEffect, useState } from "react";
 import { Save, AlertTriangle } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
-import type { AgentKind, PermissionMode, Settings } from "../api/types";
+import type { AgentKind, PermissionMode, Settings, WebhookConfig } from "../api/types";
 import { AGENT_LABELS } from "../lib/format";
+
+function newWebhook(): WebhookConfig {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `wh-${Math.floor(Math.random() * 1e9)}`;
+  return { id, name: "New webhook", url: "", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true };
+}
 
 const PERMISSION_MODES: { value: PermissionMode; label: string; hint: string }[] = [
   { value: "bypass-permissions", label: "Bypass (autonomous)", hint: "Required for unattended runs. Skips all permission prompts." },
@@ -134,6 +142,74 @@ export function SettingsView() {
             Open a pull request when a task completes (needs <code className="text-neutral-400">gh</code>)
           </label>
         </div>
+      </section>
+
+      <section className="card mb-5 p-4">
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-neutral-200">Notification webhooks</h3>
+          <button
+            className="btn !py-1"
+            onClick={() => set({ webhooks: [...(draft.webhooks ?? []), newWebhook()] })}
+          >
+            + Add webhook
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-neutral-500">
+          Post to Slack, Discord, or any endpoint when tasks finish. Delivered via <code className="text-neutral-400">curl</code>.
+        </p>
+        {(draft.webhooks ?? []).length === 0 ? (
+          <p className="text-xs text-neutral-600">No webhooks configured.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {(draft.webhooks ?? []).map((w, i) => {
+              const update = (patch: Partial<WebhookConfig>) => {
+                const webhooks = draft.webhooks.map((x, j) => (j === i ? { ...x, ...patch } : x));
+                set({ webhooks });
+              };
+              const removeHook = () => set({ webhooks: draft.webhooks.filter((_, j) => j !== i) });
+              return (
+                <div key={w.id} className="rounded-md border border-[var(--color-border)] p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <input
+                      className="input max-w-[180px]"
+                      value={w.name}
+                      placeholder="Name"
+                      onChange={(e) => update({ name: e.target.value })}
+                    />
+                    <select className="input max-w-[120px]" value={w.kind} onChange={(e) => update({ kind: e.target.value })}>
+                      <option value="slack">Slack</option>
+                      <option value="discord">Discord</option>
+                      <option value="generic">Generic JSON</option>
+                    </select>
+                    <label className="ml-auto flex items-center gap-1.5 text-xs text-neutral-400">
+                      <input type="checkbox" checked={w.enabled} onChange={(e) => update({ enabled: e.target.checked })} />
+                      Enabled
+                    </label>
+                    <button className="btn btn-danger !px-2 !py-1" onClick={removeHook} title="Remove">
+                      <AlertTriangle size={13} />
+                    </button>
+                  </div>
+                  <input
+                    className="input mb-2 font-mono text-xs"
+                    value={w.url}
+                    placeholder="https://hooks.slack.com/services/…"
+                    onChange={(e) => update({ url: e.target.value })}
+                  />
+                  <div className="flex gap-4 text-xs text-neutral-400">
+                    <label className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={w.onTaskComplete} onChange={(e) => update({ onTaskComplete: e.target.checked })} />
+                      On task complete
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={w.onTaskFail} onChange={(e) => update({ onTaskFail: e.target.checked })} />
+                      On task fail
+                    </label>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="card mb-5 p-4">

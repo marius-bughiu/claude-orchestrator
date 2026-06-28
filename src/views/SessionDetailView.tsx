@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User, GitBranch, GitPullRequest } from "lucide-react";
+import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User, GitBranch, GitPullRequest, Download } from "lucide-react";
 import * as api from "../api";
 import type { Session, SessionEvent } from "../api/types";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
@@ -154,6 +154,44 @@ export function SessionDetailView() {
 
   const isActive = session.status === "running" || session.status === "pending";
 
+  const exportTranscript = () => {
+    const s = session;
+    const lines: string[] = [];
+    lines.push(`# Session transcript`);
+    lines.push("");
+    lines.push(`- **Session:** ${s.id}`);
+    lines.push(`- **Agent:** ${s.agent}${s.model ? ` (${s.model})` : ""}`);
+    lines.push(`- **Kind:** ${s.kind}`);
+    lines.push(`- **Status:** ${s.status}`);
+    if (s.branch) lines.push(`- **Branch:** ${s.branch}`);
+    if (s.prUrl) lines.push(`- **Pull request:** ${s.prUrl}`);
+    lines.push(`- **Started:** ${s.startedAt ?? "—"}`);
+    lines.push(`- **Tokens:** ${s.usage.inputTokens + s.usage.outputTokens} · **Cost:** ${formatCost(s.usage.totalCostUsd)} · **Turns:** ${s.usage.numTurns}`);
+    lines.push("");
+    lines.push(`## Prompt`);
+    lines.push("");
+    lines.push(s.prompt);
+    lines.push("");
+    lines.push(`## Transcript`);
+    lines.push("");
+    for (const e of events) {
+      const label = e.kind.replace(/_/g, " ");
+      lines.push(`### ${label}`);
+      if (e.text) {
+        lines.push("");
+        lines.push(e.kind === "tool_use" ? "```\n" + e.text + "\n```" : e.text);
+      }
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `session-${s.id.slice(0, 8)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-[var(--color-border)] p-4">
@@ -175,7 +213,14 @@ export function SessionDetailView() {
               <GitPullRequest size={11} /> PR
             </a>
           )}
-          <Link to={`/projects/${session.projectId}`} className="ml-auto text-xs text-indigo-300 hover:underline">
+          <button
+            onClick={exportTranscript}
+            className="ml-auto inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-200"
+            title="Export transcript as Markdown"
+          >
+            <Download size={13} /> Export
+          </button>
+          <Link to={`/projects/${session.projectId}`} className="text-xs text-indigo-300 hover:underline">
             view project
           </Link>
         </div>
