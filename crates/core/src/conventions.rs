@@ -164,7 +164,7 @@ pub fn generate_context(project_path: impl AsRef<Path>) -> Result<String> {
     count_extensions(root, 0, &mut counts);
     if !counts.is_empty() {
         let mut ranked: Vec<(String, u32)> = counts.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.cmp(&a.1));
+        ranked.sort_by_key(|b| std::cmp::Reverse(b.1));
         out.push_str("## File types\n\n");
         for (ext, n) in ranked.into_iter().take(12) {
             out.push_str(&format!("- `.{ext}` — {n} file(s)\n"));
