@@ -106,6 +106,14 @@ export function SettingsView() {
             <input type="checkbox" checked={draft.balanceAgents} onChange={(e) => set({ balanceAgents: e.target.checked })} />
             Balance agent usage
           </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.liveStreaming} onChange={(e) => set({ liveStreaming: e.target.checked })} />
+            Live streaming &amp; injection
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.notificationsEnabled} onChange={(e) => set({ notificationsEnabled: e.target.checked })} />
+            Desktop notifications
+          </label>
         </div>
       </section>
 

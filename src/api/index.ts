@@ -7,6 +7,7 @@ import type {
   CreateTaskInput,
   OrchestratorEvent,
   OrchestratorStatus,
+  GitStatus,
   Project,
   ScheduledTask,
   UpcomingTask,
@@ -32,6 +33,8 @@ export const scaffoldProject = (id: string) =>
   invoke<string[]>("scaffold_project", { id });
 export const projectConventions = (id: string) =>
   invoke<boolean>("project_conventions", { id });
+export const projectGitStatus = (id: string) =>
+  invoke<GitStatus>("project_git_status", { id });
 
 // ---- Tasks -----------------------------------------------------------------
 export const listTasks = (projectId?: string) =>

@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { DollarSign, Coins, PlayCircle } from "lucide-react";
+import { DollarSign, Coins, PlayCircle, Download } from "lucide-react";
 import * as api from "../api";
 import type { AgentKind, UsagePoint } from "../api/types";
 import { useStore } from "../store";
@@ -19,13 +19,16 @@ const AGENTS: (AgentKind | "all")[] = ["all", "claude", "gemini", "codex"];
 
 const AXIS = "#8b95a7";
 const GRID = "rgba(130,140,160,0.18)";
-const tooltipStyle = {
-  background: "#11151d",
-  border: "1px solid #232a36",
-  borderRadius: 8,
-  fontSize: 12,
-  color: "#e6e9ef",
-};
+
+function tooltipStyleFor(light: boolean) {
+  return {
+    background: light ? "#ffffff" : "#11151d",
+    border: `1px solid ${light ? "#e0e4ea" : "#232a36"}`,
+    borderRadius: 8,
+    fontSize: 12,
+    color: light ? "#161a22" : "#e6e9ef",
+  };
+}
 
 function periodLabel(period: string, gran: Gran): string {
   if (gran === "day") return period.slice(5); // MM-DD
@@ -97,6 +100,22 @@ export function DashboardView() {
     return { cost, tokens, sessions };
   }, [series]);
 
+  const tooltipStyle = tooltipStyleFor(
+    typeof document !== "undefined" && document.documentElement.classList.contains("light"),
+  );
+
+  const exportCsv = () => {
+    const cols = ["period", "inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens", "totalTokens", "costUsd", "numTurns", "sessions"] as const;
+    const rows = [cols.join(","), ...series.map((p) => cols.map((c) => p[c]).join(","))];
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orchestrator-usage-${gran}-${agent}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -121,6 +140,9 @@ export function DashboardView() {
               <option key={a} value={a}>{a === "all" ? "All agents" : AGENT_LABELS[a as AgentKind]}</option>
             ))}
           </select>
+          <button className="btn" onClick={exportCsv} disabled={series.length === 0} title="Export current series as CSV">
+            <Download size={14} /> CSV
+          </button>
         </div>
       </div>
 

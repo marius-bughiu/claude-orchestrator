@@ -456,6 +456,19 @@ pub struct ScheduledTask {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A best-effort git working-tree snapshot for a project.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatus {
+    pub available: bool,
+    pub branch: Option<String>,
+    pub dirty: bool,
+    pub ahead: u32,
+    pub behind: u32,
+    pub last_commit: Option<String>,
+    pub last_subject: Option<String>,
+}
+
 /// A projected future firing of a scheduled task, for the "Upcoming" lists.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

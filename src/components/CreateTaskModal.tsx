@@ -62,7 +62,12 @@ export function CreateTaskModal({
 
   return (
     <Modal title="New task" onClose={onClose} width="max-w-xl">
-      <div className="flex flex-col gap-3">
+      <div
+        className="flex flex-col gap-3"
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+        }}
+      >
         {!lockProject && (
           <div>
             <label className="mb-1 block text-xs text-neutral-400">Project</label>

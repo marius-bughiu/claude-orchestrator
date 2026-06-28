@@ -97,6 +97,10 @@ pub struct Settings {
     /// sessions.
     #[serde(default = "default_true")]
     pub live_streaming: bool,
+    /// When true, the app raises a desktop notification when a task completes or
+    /// fails.
+    #[serde(default = "default_true")]
+    pub notifications_enabled: bool,
     /// How often to re-scan projects for scheduled-task markdown files, seconds.
     pub schedule_refresh_secs: u64,
     /// Per-agent configuration, keyed by agent name.
@@ -120,6 +124,7 @@ impl Default for Settings {
             verify_enabled: true,
             balance_agents: true,
             live_streaming: true,
+            notifications_enabled: true,
             schedule_refresh_secs: 300,
             agents,
         }

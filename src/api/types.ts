@@ -182,6 +182,8 @@ export interface Settings {
   roadmapEnabled: boolean;
   verifyEnabled: boolean;
   balanceAgents: boolean;
+  liveStreaming: boolean;
+  notificationsEnabled: boolean;
   scheduleRefreshSecs: number;
   agents: Record<string, AgentConfig>;
 }
@@ -206,6 +208,16 @@ export interface ScheduledTask {
   nextRun: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GitStatus {
+  available: boolean;
+  branch: string | null;
+  dirty: boolean;
+  ahead: number;
+  behind: number;
+  lastCommit: string | null;
+  lastSubject: string | null;
 }
 
 export interface UpcomingTask {

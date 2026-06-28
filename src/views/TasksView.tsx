@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useStore } from "../store";
 import type { TaskStatus } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
@@ -23,6 +23,7 @@ export function TasksView() {
   const refreshAll = useStore((s) => s.refreshAll);
   const [projectFilter, setProjectFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -30,14 +31,19 @@ export function TasksView() {
   }, [refreshAll]);
 
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
       if (projectFilter !== "all" && t.projectId !== projectFilter) return false;
+      if (q) {
+        const hay = `${t.title} ${t.description} ${t.tags.join(" ")}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       if (statusFilter === "all") return true;
       if (statusFilter === "active")
         return ["pending", "queued", "running", "needs_review"].includes(t.status);
       return t.status === statusFilter;
     });
-  }, [tasks, projectFilter, statusFilter]);
+  }, [tasks, projectFilter, statusFilter, search]);
 
   return (
     <div className="p-6">
@@ -52,6 +58,15 @@ export function TasksView() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative max-w-[240px] flex-1">
+          <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <input
+            className="input pl-8"
+            placeholder="Search tasks…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <select className="input max-w-[200px]" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
           <option value="all">All projects</option>
           {projects.map((p) => (

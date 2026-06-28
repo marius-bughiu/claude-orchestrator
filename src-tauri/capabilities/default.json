@@ -13,6 +13,7 @@
     "opener:allow-open-url",
     "updater:default",
     "process:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "notification:default"
   ]
 }

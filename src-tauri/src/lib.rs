@@ -44,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = data_dir(&handle);
@@ -65,6 +66,7 @@ pub fn run() {
             commands::remove_project,
             commands::scaffold_project,
             commands::project_conventions,
+            commands::project_git_status,
             commands::list_tasks,
             commands::get_task,
             commands::create_task,

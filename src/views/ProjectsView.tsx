@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderGit2, Plus, FolderOpen, Power } from "lucide-react";
+import { FolderGit2, Plus, FolderOpen, Power, GitBranch } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
-import type { Project } from "../api/types";
+import type { GitStatus, Project } from "../api/types";
 import { AgentBadge } from "../components/Badges";
 import { Modal, EmptyState } from "../components/Modal";
 
@@ -83,6 +83,13 @@ function ProjectCard({ project }: { project: Project }) {
   const navigate = useNavigate();
   const tasks = useStore((s) => s.tasks);
   const refreshProjects = useStore((s) => s.refreshProjects);
+  const [git, setGit] = useState<GitStatus | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api.projectGitStatus(project.id).then((g) => active && setGit(g)).catch(() => {});
+    return () => { active = false; };
+  }, [project.id]);
 
   const counts = useMemo(() => {
     const mine = tasks.filter((t) => t.projectId === project.id);
@@ -127,8 +134,17 @@ function ProjectCard({ project }: { project: Project }) {
         <span className="text-indigo-300">{counts.running} running</span>
         <span className="text-emerald-300">{counts.done} done</span>
       </div>
-      <div className="mt-2 flex gap-2 text-[11px] text-neutral-600">
-        {project.roadmapEnabled && <span>roadmap loop</span>}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-neutral-600">
+        {git?.available && git.branch && (
+          <span className="flex items-center gap-1 text-neutral-500" title={git.lastSubject ?? ""}>
+            <GitBranch size={11} />
+            {git.branch}
+            {git.dirty && <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-amber-400" title="uncommitted changes" />}
+            {git.ahead > 0 && <span className="text-emerald-400">↑{git.ahead}</span>}
+            {git.behind > 0 && <span className="text-sky-400">↓{git.behind}</span>}
+          </span>
+        )}
+        {project.roadmapEnabled && <span>· roadmap loop</span>}
         {project.verifyEnabled && <span>· verify</span>}
       </div>
     </div>

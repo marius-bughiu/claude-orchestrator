@@ -86,7 +86,8 @@ body {
   .btn {
     @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)]
       px-3 py-1.5 text-sm font-medium text-neutral-200 transition-colors
-      hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50;
+      hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60;
   }
   .btn-primary {
     @apply border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-500;
@@ -97,7 +98,7 @@ body {
   .input {
     @apply w-full rounded-md border border-[var(--color-border)] bg-[var(--color-canvas)]
       px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-500
-      focus:border-indigo-500;
+      focus:border-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-500/40;
   }
   .chip {
     @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium;

@@ -16,6 +16,7 @@ pub mod db;
 pub mod engine;
 pub mod error;
 pub mod event;
+pub mod git;
 pub mod models;
 pub mod parse;
 pub mod runner;

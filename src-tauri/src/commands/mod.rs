@@ -59,6 +59,12 @@ pub fn project_conventions(state: State<AppState>, id: String) -> CmdResult<bool
     Ok(conventions::is_initialized(&project.path))
 }
 
+#[tauri::command]
+pub fn project_git_status(state: State<AppState>, id: String) -> CmdResult<GitStatus> {
+    let project = state.engine.db().get_project(&id).map_err(err)?;
+    Ok(orchestrator_core::git::status(&project.path))
+}
+
 // ---- Tasks -----------------------------------------------------------------
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as api from "../api";
+import { notify } from "../lib/notify";
 import type {
   OrchestratorEvent,
   OrchestratorStatus,
@@ -94,9 +95,16 @@ export const useStore = create<StoreState>((set, get) => ({
       case "taskUpdated": {
         const tasks = get().tasks.slice();
         const idx = tasks.findIndex((t) => t.id === event.task.id);
+        const prev = idx >= 0 ? tasks[idx] : undefined;
         if (idx >= 0) tasks[idx] = event.task;
         else tasks.unshift(event.task);
         set({ tasks });
+        // Notify on a real completion/failure transition.
+        const t = event.task;
+        const becameDone = (t.status === "completed" || t.status === "failed") && prev?.status !== t.status;
+        if (becameDone && get().settings?.notificationsEnabled !== false) {
+          notify(t.status === "completed" ? "Task completed" : "Task failed", t.title);
+        }
         break;
       }
       case "sessionUpdated":
