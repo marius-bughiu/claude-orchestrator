@@ -36,7 +36,7 @@ claude-orchestrator/
 │       ├── parse.rs          # roadmap & verify JSON output contracts
 │       ├── conventions.rs    # .orchestrator/ file resolution + scaffolding
 │       ├── templates/        # embedded default .orchestrator files
-│       ├── service.rs        # engine wiring
+│       ├── service.rs        # host-facing ops (add project, create task) + validation
 │       └── event.rs          # orchestrator event types
 │
 ├── src-tauri/            # claude-orchestrator: the Tauri host (thin)
