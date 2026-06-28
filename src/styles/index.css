@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* Dark, developer-tool aesthetic. */
+@theme {
+  --color-canvas: #0b0e14;
+  --color-surface: #11151d;
+  --color-surface-2: #161b25;
+  --color-border: #232a36;
+  --color-muted: #8b95a7;
+  --color-accent: #6366f1;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: #e6e9ef;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3340;
+  border-radius: 6px;
+  border: 2px solid var(--color-canvas);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #38424f;
+}
+
+/* Reusable surface + control classes used across views. */
+@layer components {
+  .card {
+    @apply rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)];
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-[var(--color-border)]
+      px-3 py-1.5 text-sm font-medium text-neutral-200 transition-colors
+      hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-500;
+  }
+  .btn-danger {
+    @apply border-red-500/40 text-red-300 hover:bg-red-500/10;
+  }
+  .input {
+    @apply w-full rounded-md border border-[var(--color-border)] bg-[var(--color-canvas)]
+      px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-500
+      focus:border-indigo-500;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium;
+  }
+}
