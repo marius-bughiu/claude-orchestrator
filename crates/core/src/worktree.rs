@@ -239,6 +239,22 @@ pub fn list_orchestrator_branches(repo: &Path) -> Result<Vec<BranchInfo>> {
     Ok(branches)
 }
 
+/// Whether a branch has a corresponding `origin/<branch>` remote-tracking ref,
+/// i.e. it has been pushed (typically by the auto-PR flow).
+pub fn branch_is_pushed(repo: &Path, branch: &str) -> bool {
+    git(
+        repo,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/remotes/origin/{branch}"),
+        ],
+    )
+    .map(|o| o.status.success())
+    .unwrap_or(false)
+}
+
 /// Rebase an orchestrator branch onto the repo's base branch using a throwaway
 /// worktree, so the repo's own working tree is never touched. On conflict the
 /// rebase is aborted and reported, leaving the branch unchanged.
@@ -264,10 +280,26 @@ pub fn rebase_onto_base(repo: &Path, branch: &str) -> Result<RebaseResult> {
 
     let out = git(&tmp, &["rebase", &base]);
     let result = match out {
-        Ok(o) if o.status.success() => RebaseResult {
-            status: "rebased".into(),
-            detail: format!("rebased {branch} onto {base} ({behind} commit(s))"),
-        },
+        Ok(o) if o.status.success() => {
+            let mut detail = format!("rebased {branch} onto {base} ({behind} commit(s))");
+            // If the branch was already pushed (has a remote-tracking ref), the
+            // rebase rewrote history, so update the remote with a lease-guarded
+            // force-push to keep an open PR in sync.
+            if branch_is_pushed(repo, branch) {
+                match git(&tmp, &["push", "--force-with-lease", "origin", branch]) {
+                    Ok(p) if p.status.success() => detail.push_str("; force-pushed to origin"),
+                    Ok(p) => detail.push_str(&format!(
+                        "; remote not updated ({})",
+                        String::from_utf8_lossy(&p.stderr).trim()
+                    )),
+                    Err(e) => detail.push_str(&format!("; remote not updated ({e})")),
+                }
+            }
+            RebaseResult {
+                status: "rebased".into(),
+                detail,
+            }
+        }
         Ok(_) => {
             let _ = git(&tmp, &["rebase", "--abort"]);
             RebaseResult {
@@ -620,6 +652,57 @@ mod tests {
             "up_to_date"
         );
         std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn rebase_force_pushes_a_pushed_branch() {
+        let repo = init_repo();
+        let cfg = |args: &[&str]| {
+            Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+        };
+        // A bare remote on disk, wired up as origin.
+        let remote = std::env::temp_dir().join(format!("orch-remote-{}.git", uuid::Uuid::new_v4()));
+        Command::new("git")
+            .args(["init", "--bare", "-q", &remote.to_string_lossy()])
+            .output()
+            .unwrap();
+        cfg(&["remote", "add", "origin", &remote.to_string_lossy()]);
+
+        // Branch off first commit, commit on it, and push it (simulating auto-PR).
+        let first = git_ok(&repo, &["rev-list", "--max-parents=0", "HEAD"]).unwrap();
+        cfg(&["branch", "orchestrator/pushed-1", first.trim()]);
+        let wt = worktrees_root().join(format!("p-{}", uuid::Uuid::new_v4()));
+        cfg(&[
+            "worktree",
+            "add",
+            &wt.to_string_lossy(),
+            "orchestrator/pushed-1",
+        ]);
+        std::fs::write(wt.join("feature.txt"), "f\n").unwrap();
+        commit_all(&wt, "feature").unwrap();
+        push(&wt, "orchestrator/pushed-1").unwrap();
+        remove(&repo, &wt).unwrap();
+        assert!(branch_is_pushed(&repo, "orchestrator/pushed-1"));
+
+        // Advance base so the branch is behind, then rebase.
+        std::fs::write(repo.join("base.txt"), "b\n").unwrap();
+        cfg(&["add", "-A"]);
+        cfg(&["commit", "-qm", "advance"]);
+        let res = rebase_onto_base(&repo, "orchestrator/pushed-1").unwrap();
+        assert_eq!(res.status, "rebased", "{}", res.detail);
+        assert!(res.detail.contains("force-pushed"), "{}", res.detail);
+
+        // The remote-tracking ref now matches the rebased branch head.
+        let local = git_ok(&repo, &["rev-parse", "orchestrator/pushed-1"]).unwrap();
+        let remote_head = git_ok(&repo, &["rev-parse", "origin/orchestrator/pushed-1"]).unwrap();
+        assert_eq!(local, remote_head);
+        std::fs::remove_dir_all(&repo).ok();
+        std::fs::remove_dir_all(&remote).ok();
     }
 
     #[test]

@@ -9,6 +9,7 @@ export function BranchMaintenance({ projectId }: { projectId: string }) {
   const [branches, setBranches] = useState<BranchInfo[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -42,9 +43,14 @@ export function BranchMaintenance({ projectId }: { projectId: string }) {
   const rebase = async (name: string) => {
     setBusy(name);
     setError(null);
+    setNotice(null);
     try {
       const r = await api.rebaseBranch(projectId, name);
       if (r.status === "conflicts" || r.status === "error") setError(r.detail);
+      else {
+        setNotice(r.detail);
+        setTimeout(() => setNotice(null), 5000);
+      }
       load();
     } catch (e) {
       setError(String(e));
@@ -75,6 +81,7 @@ export function BranchMaintenance({ projectId }: { projectId: string }) {
         Local <code className="text-neutral-400">orchestrator/*</code> branches from isolated tasks. Merged branches are safe to delete.
       </p>
       {error && <p className="text-xs text-amber-400/80">{error}</p>}
+      {notice && <p className="text-xs text-emerald-400/80">{notice}</p>}
       {branches && branches.length > 0 && (
         <div className="flex flex-col gap-1.5">
           {branches.map((b) => (
