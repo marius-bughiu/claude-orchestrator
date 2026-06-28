@@ -865,6 +865,43 @@ impl Engine {
         Ok(created)
     }
 
+    /// Compute the code changes a task session made on its worktree branch. The
+    /// diff is read from the live worktree while the task runs (or before its
+    /// changes are committed), and from the committed branch afterward.
+    pub fn session_diff(&self, session_id: &str) -> Result<SessionDiff> {
+        let session = self.db.get_session(session_id)?;
+        let Some(branch) = session.branch.clone() else {
+            return Ok(SessionDiff::default());
+        };
+        let project = self.db.get_project(&session.project_id)?;
+        let repo = PathBuf::from(&project.path);
+        let wt = worktree::worktrees_root().join(&session.id);
+        if wt.exists() {
+            worktree::working_diff(&wt, Some(branch))
+        } else {
+            worktree::branch_diff(&repo, &branch)
+        }
+    }
+
+    /// Open pull requests for a project, with CI / review status summarized.
+    pub fn list_pull_requests(&self, project_id: &str) -> Result<Vec<PullRequest>> {
+        let project = self.db.get_project(project_id)?;
+        if !crate::github::available() {
+            return Err(CoreError::Other(
+                "the GitHub CLI `gh` is not installed or not on PATH".into(),
+            ));
+        }
+        crate::github::list_open_prs(&project.path)
+    }
+
+    /// Merge a pull request for a project by number (squash + delete branch).
+    pub fn merge_pull_request(&self, project_id: &str, number: u64) -> Result<()> {
+        let project = self.db.get_project(project_id)?;
+        crate::github::merge_pr(&project.path, number)?;
+        self.log("info", format!("merged PR #{number} in {}", project.name));
+        Ok(())
+    }
+
     /// Fire any configured webhooks that want this event. Best-effort, async,
     /// fire-and-forget (delivery runs on a blocking thread; failures are logged).
     fn notify_webhooks(&self, event: &str, title: &str, body: &str, link: Option<String>) {

@@ -96,6 +96,9 @@ pub fn run() {
             commands::project_memory,
             commands::generate_project_context,
             commands::import_github_issues,
+            commands::list_pull_requests,
+            commands::merge_pull_request,
+            commands::session_diff,
             commands::begin_drain,
             commands::cancel_drain,
         ])

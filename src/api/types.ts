@@ -210,6 +210,36 @@ export interface ProjectMemory {
   lessons: string | null;
 }
 
+export interface DiffFile {
+  path: string;
+  additions: number;
+  deletions: number;
+  status: string;
+}
+
+export interface SessionDiff {
+  available: boolean;
+  branch: string | null;
+  base: string | null;
+  files: DiffFile[];
+  additions: number;
+  deletions: number;
+  patch: string;
+  truncated: boolean;
+}
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  draft: boolean;
+  branch: string;
+  ci: string;
+  reviewDecision: string | null;
+  mergeable: string | null;
+}
+
 export interface WebhookConfig {
   id: string;
   name: string;

@@ -324,6 +324,33 @@ pub fn import_github_issues(state: State<AppState>, project_id: String) -> CmdRe
     state.engine.import_github_issues(&project_id).map_err(err)
 }
 
+#[tauri::command]
+pub fn list_pull_requests(
+    state: State<AppState>,
+    project_id: String,
+) -> CmdResult<Vec<PullRequest>> {
+    state.engine.list_pull_requests(&project_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn merge_pull_request(
+    state: State<AppState>,
+    project_id: String,
+    number: u64,
+) -> CmdResult<()> {
+    state
+        .engine
+        .merge_pull_request(&project_id, number)
+        .map_err(err)
+}
+
+// ---- Diffs -----------------------------------------------------------------
+
+#[tauri::command]
+pub fn session_diff(state: State<AppState>, id: String) -> CmdResult<SessionDiff> {
+    state.engine.session_diff(&id).map_err(err)
+}
+
 // ---- Updates ---------------------------------------------------------------
 
 /// Begin draining for an update: stop scheduling new work. The UI then polls

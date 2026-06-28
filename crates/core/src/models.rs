@@ -412,6 +412,57 @@ pub struct AgentStat {
     pub avg_duration_secs: f64,
 }
 
+/// One changed file in a session's diff.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffFile {
+    pub path: String,
+    pub additions: u32,
+    pub deletions: u32,
+    /// "modified" | "added" | "deleted" | "renamed" | "untracked".
+    pub status: String,
+}
+
+/// The set of changes a task session made on its worktree branch.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDiff {
+    /// False when the session was not isolated, produced no commit, or the
+    /// branch/worktree is no longer available.
+    pub available: bool,
+    /// The branch the work lives on, if any.
+    pub branch: Option<String>,
+    /// The base the diff is computed against (e.g. the repo's main branch, or
+    /// "working tree" while the task is still running).
+    pub base: Option<String>,
+    pub files: Vec<DiffFile>,
+    pub additions: u32,
+    pub deletions: u32,
+    /// Unified diff text (truncated for very large diffs).
+    pub patch: String,
+    /// True if `patch` was truncated.
+    pub truncated: bool,
+}
+
+/// An open pull request for a project, with CI / review state summarized.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequest {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    /// "OPEN" | "MERGED" | "CLOSED".
+    pub state: String,
+    pub draft: bool,
+    pub branch: String,
+    /// Summarized CI rollup: "passing" | "failing" | "pending" | "none".
+    pub ci: String,
+    /// "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null.
+    pub review_decision: Option<String>,
+    /// "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | null.
+    pub mergeable: Option<String>,
+}
+
 /// A project's accumulated memory: auto-generated context and learned lessons.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

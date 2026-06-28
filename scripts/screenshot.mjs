@@ -14,6 +14,8 @@ const routes = [
   ["project-detail", "/#/projects/p1"],
   ["tasks", "/#/tasks"],
   ["board", "/#/board"],
+  ["graph", "/#/graph"],
+  ["pulls", "/#/pulls"],
   ["scheduled", "/#/scheduled"],
   ["timeline", "/#/timeline"],
   ["settings", "/#/settings"],
@@ -76,6 +78,20 @@ await capture("light", ["dashboard", "projects"]);
   await page.waitForTimeout(400);
   await page.screenshot({ path: join(outDir, "command-palette.png") });
   console.log("shot: command-palette");
+  await ctx.close();
+}
+
+// Session detail with the Changes (diff) panel expanded.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1320, height: 980 }, deviceScaleFactor: 2, colorScheme: "dark" });
+  await ctx.addInitScript(mock);
+  const page = await ctx.newPage();
+  await page.goto(base + "/#/sessions/s1", { waitUntil: "networkidle" });
+  await page.waitForTimeout(500);
+  await page.getByText("Changes", { exact: false }).first().click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: join(outDir, "session-diff.png") });
+  console.log("shot: session-diff");
   await ctx.close();
 }
 

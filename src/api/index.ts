@@ -11,6 +11,8 @@ import type {
   GitStatus,
   Project,
   ProjectMemory,
+  PullRequest,
+  SessionDiff,
   ScheduledTask,
   UpcomingTask,
   UsagePoint,
@@ -113,6 +115,13 @@ export const generateProjectContext = (id: string) =>
 // ---- GitHub ----------------------------------------------------------------
 export const importGithubIssues = (projectId: string) =>
   invoke<number>("import_github_issues", { projectId });
+export const listPullRequests = (projectId: string) =>
+  invoke<PullRequest[]>("list_pull_requests", { projectId });
+export const mergePullRequest = (projectId: string, number: number) =>
+  invoke<void>("merge_pull_request", { projectId, number });
+
+// ---- Diffs -----------------------------------------------------------------
+export const sessionDiff = (id: string) => invoke<SessionDiff>("session_diff", { id });
 
 // ---- Updates ---------------------------------------------------------------
 export const beginDrain = () => invoke<void>("begin_drain");

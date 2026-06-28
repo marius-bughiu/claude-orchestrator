@@ -5,8 +5,12 @@
 //! gracefully when they're unavailable.
 
 use crate::error::{CoreError, Result};
+use crate::models::{DiffFile, SessionDiff};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Cap on the unified-diff text returned to the UI (bytes).
+const MAX_PATCH_BYTES: usize = 200_000;
 
 fn git(repo: &Path, args: &[&str]) -> Result<std::process::Output> {
     Command::new("git")
@@ -171,6 +175,92 @@ pub fn open_pr(wt: &Path, title: &str, body: &str, base: &str) -> Result<Option<
     }
 }
 
+/// Parse `git diff --numstat` output into per-file change counts. A `-` count
+/// (binary file) is treated as 0.
+fn parse_numstat(text: &str) -> Vec<DiffFile> {
+    let mut files = Vec::new();
+    for line in text.lines() {
+        let mut parts = line.splitn(3, '\t');
+        let (Some(add), Some(del), Some(path)) = (parts.next(), parts.next(), parts.next()) else {
+            continue;
+        };
+        files.push(DiffFile {
+            path: path.to_string(),
+            additions: add.parse().unwrap_or(0),
+            deletions: del.parse().unwrap_or(0),
+            status: "modified".into(),
+        });
+    }
+    files
+}
+
+/// Assemble a `SessionDiff` from numstat + patch text, applying the size cap.
+fn build_diff(
+    branch: Option<String>,
+    base: Option<String>,
+    numstat: &str,
+    patch: String,
+) -> SessionDiff {
+    let files = parse_numstat(numstat);
+    let additions = files.iter().map(|f| f.additions).sum();
+    let deletions = files.iter().map(|f| f.deletions).sum();
+    let truncated = patch.len() > MAX_PATCH_BYTES;
+    let patch = if truncated {
+        let mut p: String = patch.chars().take(MAX_PATCH_BYTES).collect();
+        p.push_str("\n\n… diff truncated …\n");
+        p
+    } else {
+        patch
+    };
+    SessionDiff {
+        available: !files.is_empty(),
+        branch,
+        base,
+        additions,
+        deletions,
+        files,
+        patch,
+        truncated,
+    }
+}
+
+/// Diff a committed task branch against the point it forked from the repo's
+/// current branch (so only the task's own commits show).
+pub fn branch_diff(repo: &Path, branch: &str) -> Result<SessionDiff> {
+    let base = current_branch(repo).unwrap_or_else(|| "HEAD".into());
+    let merge_base = git_ok(repo, &["merge-base", &base, branch]).unwrap_or_else(|_| "HEAD".into());
+    let range = format!("{merge_base}..{branch}");
+    let numstat = git_ok(repo, &["diff", "--numstat", &range]).unwrap_or_default();
+    let patch = git_ok(repo, &["diff", &range]).unwrap_or_default();
+    Ok(build_diff(
+        Some(branch.to_string()),
+        Some(base),
+        &numstat,
+        patch,
+    ))
+}
+
+/// Diff the still-live worktree against its HEAD (used while a task runs or
+/// before its changes are committed). Untracked files are listed as additions.
+pub fn working_diff(wt: &Path, branch: Option<String>) -> Result<SessionDiff> {
+    let numstat = git_ok(wt, &["diff", "--numstat", "HEAD"]).unwrap_or_default();
+    let patch = git_ok(wt, &["diff", "HEAD"]).unwrap_or_default();
+    let mut diff = build_diff(branch, Some("working tree".into()), &numstat, patch);
+    // Untracked files don't show in `git diff`; surface them as added.
+    if let Ok(others) = git_ok(wt, &["ls-files", "--others", "--exclude-standard"]) {
+        for path in others.lines().filter(|l| !l.is_empty()) {
+            diff.files.push(DiffFile {
+                path: path.to_string(),
+                additions: 0,
+                deletions: 0,
+                status: "untracked".into(),
+            });
+        }
+    }
+    diff.available = !diff.files.is_empty();
+    Ok(diff)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +312,40 @@ mod tests {
 
         remove(&repo, &wt).unwrap();
         assert!(!wt.exists());
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn branch_diff_shows_task_commits() {
+        let repo = init_repo();
+        let wt = worktrees_root().join(format!("d-{}", uuid::Uuid::new_v4()));
+        create(&repo, "orchestrator/diff-1", &wt).unwrap();
+        std::fs::write(wt.join("feature.txt"), "line one\nline two\n").unwrap();
+        commit_all(&wt, "add feature").unwrap();
+        // Worktree removed: diff comes from the committed branch.
+        remove(&repo, &wt).unwrap();
+
+        let diff = branch_diff(&repo, "orchestrator/diff-1").unwrap();
+        assert!(diff.available);
+        assert!(diff.files.iter().any(|f| f.path == "feature.txt"));
+        assert_eq!(diff.additions, 2);
+        assert!(diff.patch.contains("line one"));
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn working_diff_includes_untracked() {
+        let repo = init_repo();
+        let wt = worktrees_root().join(format!("w-{}", uuid::Uuid::new_v4()));
+        create(&repo, "orchestrator/work-1", &wt).unwrap();
+        std::fs::write(wt.join("scratch.txt"), "wip").unwrap();
+        let diff = working_diff(&wt, Some("orchestrator/work-1".into())).unwrap();
+        assert!(diff.available);
+        assert!(diff
+            .files
+            .iter()
+            .any(|f| f.path == "scratch.txt" && f.status == "untracked"));
+        remove(&repo, &wt).unwrap();
         std::fs::remove_dir_all(&repo).ok();
     }
 
