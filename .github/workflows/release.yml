@@ -1,0 +1,101 @@
+name: Release
+
+# Builds installers for macOS, Windows, and Linux and publishes a GitHub Release
+# on every push to main. The version is derived from the run number so each push
+# produces a new, monotonically-increasing release that the in-app updater can
+# pick up via releases/latest/download/latest.json.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: echo "version=0.1.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            target: ""
+            args: ""
+          - platform: windows-latest
+            target: ""
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        shell: bash
+        run: |
+          V="${{ needs.version.outputs.version }}"
+          node -e "for (const f of ['package.json','src-tauri/tauri.conf.json']) { const fs=require('fs'); const j=JSON.parse(fs.readFileSync(f)); j.version='${V}'; fs.writeFileSync(f, JSON.stringify(j,null,2)+'\n'); }"
+          node -e "const fs=require('fs'); let s=fs.readFileSync('Cargo.toml','utf8'); s=s.replace(/^version = \".*\"/m, 'version = \"${V}\"'); fs.writeFileSync('Cargo.toml', s);"
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev librsvg2-dev libgtk-3-dev \
+            build-essential curl wget file libssl-dev libayatana-appindicator3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: app-v${{ needs.version.outputs.version }}
+          releaseName: "Claude Orchestrator v${{ needs.version.outputs.version }}"
+          releaseBody: "Automated release. Download the installer for your platform below. The desktop app auto-updates from this release channel."
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

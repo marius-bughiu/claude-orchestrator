@@ -1,115 +1,158 @@
+<div align="center">
+
+<img src="docs/screenshots/icon.png" width="96" height="96" alt="Claude Orchestrator logo" />
+
 # Claude Orchestrator
 
-A cross-platform desktop app that orchestrates autonomous coding agents — Claude Code, Gemini CLI, and Codex CLI — across multiple local git repositories. You point it at your repos, describe what you want, and it runs agents in parallel sessions, generates its own follow-up work when a project's queue runs dry, verifies finished tasks, and surfaces live progress and usage in one place. It's a Tauri 2 app: a platform-independent Rust engine (`orchestrator-core`) driving a React/TypeScript UI.
+**Run a fleet of autonomous coding agents — Claude Code, Gemini CLI, and Codex CLI — across all your local git repositories, from one cross-platform desktop app.**
 
-**Features**
+Queue tasks, let agents work in parallel, generate their own roadmap, verify their own output, and watch it all stream live — with per-agent usage and cost tracking built in.
 
-- **Projects** — register local git repos; each gets a scaffolded `.orchestrator/` to steer behavior.
-- **Tasks** — units of work with priority, dependencies, retry caps, tags, and a chosen agent.
-- **Autonomous scheduler** — allocates pending tasks to concurrent sessions, with globally and per-project configurable concurrency.
-- **Multi-agent** — Claude is the default orchestrator/executor; Gemini and Codex are delegable sub-agents (per-project **allowed-agents** set, Claude only by default). Each CLI runs with streaming JSON output, parsed into a normalized event stream.
-- **Usage-balanced dispatch** — unpinned tasks go to the least-used available agent, so work sheds from Claude to Gemini/Codex as usage runs ahead.
-- **Scheduled tasks** — recurring jobs defined as markdown files (`.orchestrator/scheduled/*.md`) with a cron/interval in front matter; discovered on launch and re-scanned periodically.
-- **Model selection** — pick a model per task, per scheduled job, or per follow-up message; defaults to the latest Opus for Claude and each CLI's latest otherwise.
-- **Roadmap loop** — when a project's queue empties, an agent reads the project's direction and proposes the next batch of tasks.
-- **Verification** — finished tasks are independently judged; failed verification re-queues the task with reviewer feedback, up to `max_attempts`.
-- **Usage / limits tracking** — per-agent token and cost usage over a rolling window (default 5h), shown in the top bar.
-- **Timeline** — a chronological view of every session across all projects.
-- **Live session streaming** — watch an agent's events (assistant text, tool calls, results) as they happen.
-- **Message injection** — send a follow-up message into a session to continue its conversation with full prior context.
+[![CI](https://github.com/marius-bughiu/claude-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/marius-bughiu/claude-orchestrator/actions/workflows/ci.yml)
+[![Release](https://github.com/marius-bughiu/claude-orchestrator/actions/workflows/release.yml/badge.svg)](https://github.com/marius-bughiu/claude-orchestrator/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/marius-bughiu/claude-orchestrator?sort=semver)](https://github.com/marius-bughiu/claude-orchestrator/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-555)
+![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
+![Rust](https://img.shields.io/badge/Rust-engine-orange)
+![React](https://img.shields.io/badge/React%20%2B%20TypeScript-UI-3178C6)
 
-## How it works
+<br/>
 
-The scheduler runs on a tick. On each tick it walks every enabled project and, while concurrency budget remains (global cap and per-project cap), picks the highest-priority schedulable task whose dependencies are met and whose attempts aren't exhausted, then spawns a session to execute it. The agent CLI runs with streaming JSON output, which is normalized into a persisted event stream. When a task's session finishes, a verifier session independently judges whether the goal was actually met — if not, the task is re-queued with the verifier's follow-up feedback, up to `max_attempts`. When a project's task queue is empty, the roadmap loop runs instead: an agent reads the project's vision and emits a fresh batch of tasks, and the cycle continues.
+<img src="docs/screenshots/dashboard.png" alt="Claude Orchestrator dashboard — usage, tokens, and sessions over time" width="860" />
+
+</div>
+
+---
+
+## What it does
+
+Claude Orchestrator is a **control plane for autonomous AI coding agents**. Point it at your local git repositories, give it work (or let it generate its own), and it schedules that work across concurrent agent sessions — entirely hands-off, or with you in the loop.
+
+- 🗂️ **Multi-project** — manage many local git repos from one place.
+- ✅ **Task queue** — per-project and global, with priorities, dependencies, and retries.
+- ⚙️ **Autonomous scheduler** — allocates pending tasks to concurrent sessions; configurable concurrency globally and per project.
+- 🤖 **Multi-agent** — Claude orchestrates; **Gemini** and **Codex** are delegable sub-agents (per-project allowed-agent set, Claude-only by default). Every CLI runs with streaming JSON, parsed into a unified event stream.
+- ⚖️ **Usage-balanced dispatch** — unpinned work routes to the least-used agent, so it sheds from Claude to Gemini/Codex as usage runs ahead.
+- 🔁 **Roadmap loop** — when a project's queue empties, an agent proposes the next batch of work.
+- 🔍 **Self-verification** — finished tasks are independently checked against their acceptance criteria; failures are re-queued with feedback.
+- ⏰ **Scheduled tasks** — recurring jobs defined as markdown files with a cron/interval in front matter, discovered automatically.
+- 📊 **Dashboards & usage tracking** — cost, tokens, sessions, and turns per day / month / year, plus a top-bar showing **session and weekly % of your limits** for every agent.
+- 🛰️ **Live timeline** — every session in progress and completed, with token-by-token streaming and the ability to inject follow-up messages.
+- 🌗 **Polished desktop UI** — light & dark themes, a real-time event feed, and a native cross-platform shell.
+- ⬆️ **Auto-updating** — ships a new release on every push to `main`; the app detects it, drains running work gracefully, then updates and restarts.
+
+## How the agent loop works
+
+```
+pending task ──► agent session (streaming) ──► verify goal met?
+     ▲                                              │
+     │ no (re-queue with feedback)  ◄───────────────┤
+     │                                              │ yes ──► done
+     └──◄── roadmap loop generates new tasks ◄── queue empty?
+```
+
+The scheduler continuously looks for schedulable work, respects global/per-project
+concurrency limits, runs the roadmap loop when a project runs dry, and verifies
+each result before marking it complete.
+
+## Screenshots
+
+| Tasks & upcoming schedule | Live agent session |
+|---|---|
+| [![Tasks](docs/screenshots/tasks.png)](docs/screenshots/tasks.png) | [![Session](docs/screenshots/session.png)](docs/screenshots/session.png) |
+
+| Timeline | Scheduled jobs |
+|---|---|
+| [![Timeline](docs/screenshots/timeline.png)](docs/screenshots/timeline.png) | [![Scheduled](docs/screenshots/scheduled.png)](docs/screenshots/scheduled.png) |
+
+<sub>Light theme is built in too — every view adapts.</sub>
 
 ## Architecture
 
-The codebase is two Rust crates plus a React frontend. The split between `orchestrator-core` and the Tauri host is deliberate: the engine is GUI-agnostic and fully unit-tested (32 tests), while `src-tauri` is a thin host exposing it over IPC.
+A platform-independent Rust engine with a thin Tauri shell and a React UI:
 
 ```
-claude-orchestrator/
-├── crates/core/          # orchestrator-core: the platform-independent engine
-│   └── src/
-│       ├── models.rs         # core data model (Project, Task, Session, usage…)
-│       ├── config.rs         # Settings + PermissionMode
-│       ├── db/               # SQLite store (schema.sql, queries, tests)
-│       ├── agents/           # claude.rs, gemini.rs, codex.rs adapters + stream-json parsing
-│       ├── runner.rs         # process runner (spawn, stream, cancel)
-│       ├── engine.rs         # scheduler / roadmap / verify loop, agent balancing
-│       ├── scheduled.rs      # scheduled-task (cron/interval) parsing + next-run
-│       ├── parse.rs          # roadmap & verify JSON output contracts
-│       ├── conventions.rs    # .orchestrator/ file resolution + scaffolding
-│       ├── templates/        # embedded default .orchestrator files
-│       ├── service.rs        # host-facing ops (add project, create task) + validation
-│       └── event.rs          # orchestrator event types
-│
-├── src-tauri/            # claude-orchestrator: the Tauri host (thin)
-│   └── src/
-│       ├── commands/mod.rs   # the IPC command surface
-│       ├── state.rs          # event bridge (core events → frontend)
-│       └── lib.rs            # app setup
-│
-└── src/                  # React / TypeScript frontend
-    ├── api/                  # types.ts + index.ts (typed IPC client)
-    ├── store/                # Zustand state
-    ├── views/                # Projects, Tasks, Timeline, Settings, Session/Task detail
-    └── components/
+crates/core/   orchestrator-core — engine, SQLite, agent adapters, scheduler (no GUI deps)
+  ├─ models.rs        data model            ├─ runner.rs     streaming process runner
+  ├─ db/              SQLite persistence     ├─ engine.rs     scheduler / roadmap / verify
+  ├─ agents/          Claude·Gemini·Codex    ├─ scheduled.rs  cron/interval scheduled tasks
+  └─ parse.rs         output contracts       └─ conventions.rs  .orchestrator/ files
+src-tauri/     Tauri host — IPC commands, event bridge, updater
+src/           React + TypeScript + Tailwind — views, zustand store, charts
 ```
 
-## Prerequisites
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design.
 
-- **Rust** (stable, 1.77+) with Cargo.
-- **Node.js 22** and **pnpm**.
-- **Agent CLIs** on your `PATH`:
-  - **Claude Code** (`claude`) — required; it's the default orchestrator/executor.
-  - **Gemini CLI** (`gemini`) and **Codex CLI** (`codex`) — optional; only needed if you delegate work to them.
-- **Linux only:** WebKit development libraries are required to build the Tauri app (e.g. `webkit2gtk-4.1` / `libwebkit2gtk-4.1-dev`, plus the usual GTK/AppIndicator build deps). See the [Tauri Linux prerequisites](https://tauri.app/start/prerequisites/) for your distro.
+## Quick start
 
-## Getting started
+**Prerequisites**
 
-Install frontend dependencies:
+- [Rust](https://rustup.rs/) (stable) and [Node 22](https://nodejs.org/) + [pnpm](https://pnpm.io/)
+- The [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) (`claude`) — required. Gemini and Codex CLIs are optional sub-agents, auto-detected on your `PATH`.
+- On Linux, the WebKit dev libraries:
+  ```bash
+  sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+    libjavascriptcoregtk-4.1-dev librsvg2-dev libgtk-3-dev
+  ```
+
+**Run it**
 
 ```bash
 pnpm install
+pnpm tauri dev      # launch the desktop app in development
 ```
 
-Run the app in development (hot-reloading Vite frontend + Tauri host):
+**Build installers**
 
 ```bash
-pnpm tauri dev
+pnpm tauri build    # produces native installers for your platform
 ```
 
-Build a production desktop bundle:
+**Or just download** the latest installer for macOS / Windows / Linux from the
+[Releases page](https://github.com/marius-bughiu/claude-orchestrator/releases/latest).
+The app keeps itself up to date automatically.
 
-```bash
-pnpm tauri build
-```
+## Using it
 
-Run the core engine's test suite:
+1. **Add a project** — pick a local git repo. The app scaffolds an `.orchestrator/`
+   folder with sensible defaults.
+2. **Create tasks**, or enable the **roadmap loop** and let the project generate its own.
+3. Pick allowed agents and a model per task (defaults to the latest Opus for Claude).
+4. Press **Run**. Watch the timeline, dashboards, and per-agent usage fill in.
 
-```bash
-cargo test -p orchestrator-core
-```
+### Per-project configuration
 
-Other useful checks: `pnpm build` (typecheck + build the frontend) and `cargo check -p claude-orchestrator` (build the Tauri host — needs the Linux WebKit dev libs above).
+Each repo can carry an `.orchestrator/` directory that steers autonomous behavior —
+roadmap and verification prompts, a task preamble, allowed agents, and recurring
+**scheduled tasks**. Every file is optional with built-in defaults. See
+[`docs/CONVENTIONS.md`](docs/CONVENTIONS.md).
 
-## Usage
+## Releases & auto-update
 
-1. **Add a project.** Point the orchestrator at a local git repo. On add, it scaffolds an `.orchestrator/` directory with default convention files (without overwriting anything that already exists), so the repo works out of the box.
-2. **Get tasks.** Either create tasks yourself (title, description / acceptance criteria, priority, agent), or leave the project's queue empty and let the **roadmap loop** generate them from the project's direction.
-3. **Press Run.** Start the scheduler. It allocates pending tasks to sessions within your configured concurrency limits and delegates to the chosen agent.
-4. **Watch the timeline.** Follow sessions live as they stream events; finished tasks are verified automatically, and anything that fails verification is re-queued with feedback. Send a follow-up message into a session at any time to steer it.
+Every push to `main` publishes a signed, cross-platform release; the desktop app
+checks for it on launch and updates gracefully (draining in-flight work first).
+See [`docs/RELEASING.md`](docs/RELEASING.md) for the signing-key setup.
 
-## Per-project configuration (`.orchestrator/`)
+## Self-hosted
 
-Each managed repo can carry an `.orchestrator/` directory that steers autonomous behavior — `config.json` (default agent, concurrency, feature toggles), `roadmap.md` (the roadmap-loop prompt), `verify.md` (the verifier prompt), and `task.md` (a preamble prepended to every task prompt). Every file is optional; sensible defaults are embedded in the engine, so any repo works without setup. The `roadmap.md` and `verify.md` files each define a small JSON output contract that the engine parses — keep those contracts intact when customizing.
-
-See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for the full reference.
-
-## Project status
-
-This is an early **v0.1** public project. It maintains itself via its own orchestration — Claude Orchestrator is registered as one of its own projects and dogfoods the roadmap/verify loop to drive its development. Expect rough edges and rapid change.
+This repository is maintained by Claude Orchestrator itself — its own
+[`.orchestrator/`](.orchestrator) directory defines the roadmap, verification, and
+scheduled jobs that keep the project moving. Contributors and agents should read
+[`CLAUDE.md`](CLAUDE.md).
 
 ## Contributing
 
-Contributions are welcome. Start with [CLAUDE.md](CLAUDE.md) for working conventions and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for a deeper tour of the engine and how the pieces fit together.
+Issues and PRs welcome. Run the checks before pushing:
+
+```bash
+cargo test -p orchestrator-core
+cargo clippy -p orchestrator-core --all-targets -- -D warnings
+cargo fmt --all -- --check
+pnpm build
+cargo check -p claude-orchestrator   # needs the Linux WebKit dev libs
+```
+
+## License
+
+[MIT](LICENSE) © Marius Bughiu

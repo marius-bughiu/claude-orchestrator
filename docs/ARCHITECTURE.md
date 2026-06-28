@@ -234,6 +234,25 @@ Pure parsing + next-run math for recurring jobs defined as markdown files in a p
 
 `Engine::choose_agent` decides which agent actually runs a task: an explicit pin is honored if it's in the project's allowed set; otherwise, when `balanceAgents` is on and the project allows more than one agent, it picks the least-loaded available agent via `agent_load` (windowed cost + a small per-active-session nudge). `run_spec` resolves the model with precedence explicit-override → per-agent config → `AgentKind::default_model()` (latest Opus for Claude; the CLI's own latest for Gemini/Codex). `Project::allowed_agents` / `effective_allowed_agents` and `Task::auto_agent` / `Task::model` carry the per-entity configuration.
 
+### 2.14 Usage windows, limits, and time-series
+
+Usage is recorded per session into `usage_records`. The header surfaces two rolling
+windows per agent — a short **session** window (default 5h) and a **weekly** window
+(168h) — each as a `WindowUsage` with the windowed `TokenUsage`, the configured cost/
+token limit, and the resulting `cost_pct` (`Engine::window_usage`). The dashboard is
+fed by `Db::usage_series(granularity, agent, limit)`, which buckets usage and session
+counts by `substr(created_at, 1, N)` (10/7/4 chars → day/month/year) and merges them
+into `UsagePoint`s.
+
+### 2.15 Update draining
+
+`Engine` holds a `draining` flag. `begin_drain()` sets it (and `tick` early-returns
+while set), so no new tasks/roadmaps/scheduled jobs are dispatched; in-flight sessions
+finish normally. The Tauri `begin_drain`/`cancel_drain` commands drive it from the UI's
+update flow, which polls `status().active_sessions` to zero before installing. The
+updater itself (`tauri-plugin-updater` + `tauri-plugin-process`) lives in the host and
+is invoked from `UpdateBanner.tsx`.
+
 ---
 
 ## 3. The Tauri host (`src-tauri/`)
