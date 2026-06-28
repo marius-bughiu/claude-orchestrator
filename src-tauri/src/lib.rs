@@ -99,6 +99,10 @@ pub fn run() {
             commands::list_pull_requests,
             commands::merge_pull_request,
             commands::session_diff,
+            commands::agent_health,
+            commands::list_branches,
+            commands::delete_branch,
+            commands::prune_worktrees,
             commands::begin_drain,
             commands::cancel_drain,
         ])

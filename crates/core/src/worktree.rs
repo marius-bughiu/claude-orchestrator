@@ -5,9 +5,12 @@
 //! gracefully when they're unavailable.
 
 use crate::error::{CoreError, Result};
-use crate::models::{DiffFile, SessionDiff};
+use crate::models::{BranchInfo, DiffFile, SessionDiff};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Prefix every orchestrator-created branch shares.
+pub const BRANCH_PREFIX: &str = "orchestrator/";
 
 /// Cap on the unified-diff text returned to the UI (bytes).
 const MAX_PATCH_BYTES: usize = 200_000;
@@ -173,6 +176,45 @@ pub fn open_pr(wt: &Path, title: &str, body: &str, base: &str) -> Result<Option<
         }
         _ => Ok(None),
     }
+}
+
+/// List orchestrator-created branches in a repo, flagging which are already
+/// merged into the repo's base branch. `active` is filled in by the caller.
+pub fn list_orchestrator_branches(repo: &Path) -> Result<Vec<BranchInfo>> {
+    let pattern = format!("{BRANCH_PREFIX}*");
+    let all = git_ok(
+        repo,
+        &["branch", "--list", &pattern, "--format=%(refname:short)"],
+    )?;
+    let base = current_branch(repo).unwrap_or_else(|| "HEAD".into());
+    let merged_out = git_ok(
+        repo,
+        &[
+            "branch",
+            "--merged",
+            &base,
+            "--list",
+            &pattern,
+            "--format=%(refname:short)",
+        ],
+    )
+    .unwrap_or_default();
+    let merged: Vec<&str> = merged_out.lines().map(|l| l.trim()).collect();
+    let mut branches = Vec::new();
+    for name in all.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+        branches.push(BranchInfo {
+            name: name.to_string(),
+            merged: merged.contains(&name),
+            active: false,
+        });
+    }
+    Ok(branches)
+}
+
+/// Prune stale worktree metadata for a repo. Best-effort.
+pub fn prune_worktrees(repo: &Path) -> Result<()> {
+    let _ = git(repo, &["worktree", "prune"]);
+    Ok(())
 }
 
 /// Parse `git diff --numstat` output into per-file change counts. A `-` count
@@ -346,6 +388,45 @@ mod tests {
             .iter()
             .any(|f| f.path == "scratch.txt" && f.status == "untracked"));
         remove(&repo, &wt).unwrap();
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn lists_orchestrator_branches_with_merged_flag() {
+        let repo = init_repo();
+        // A merged branch (committed then merged) and an unmerged one.
+        let wt1 = worktrees_root().join(format!("b1-{}", uuid::Uuid::new_v4()));
+        create(&repo, "orchestrator/merged-1", &wt1).unwrap();
+        std::fs::write(wt1.join("a.txt"), "a").unwrap();
+        commit_all(&wt1, "a").unwrap();
+        remove(&repo, &wt1).unwrap();
+        let cfg = |args: &[&str]| {
+            Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+        };
+        cfg(&["merge", "--no-ff", "-m", "merge", "orchestrator/merged-1"]);
+
+        let wt2 = worktrees_root().join(format!("b2-{}", uuid::Uuid::new_v4()));
+        create(&repo, "orchestrator/open-2", &wt2).unwrap();
+        std::fs::write(wt2.join("b.txt"), "b").unwrap();
+        commit_all(&wt2, "b").unwrap();
+        remove(&repo, &wt2).unwrap();
+
+        let branches = list_orchestrator_branches(&repo).unwrap();
+        let merged = branches
+            .iter()
+            .find(|b| b.name == "orchestrator/merged-1")
+            .unwrap();
+        let open = branches
+            .iter()
+            .find(|b| b.name == "orchestrator/open-2")
+            .unwrap();
+        assert!(merged.merged);
+        assert!(!open.merged);
         std::fs::remove_dir_all(&repo).ok();
     }
 

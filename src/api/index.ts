@@ -6,6 +6,8 @@ import type {
   AddProjectInput,
   CreateTaskInput,
   AgentStat,
+  AgentHealth,
+  BranchInfo,
   OrchestratorEvent,
   OrchestratorStatus,
   GitStatus,
@@ -122,6 +124,15 @@ export const mergePullRequest = (projectId: string, number: number) =>
 
 // ---- Diffs -----------------------------------------------------------------
 export const sessionDiff = (id: string) => invoke<SessionDiff>("session_diff", { id });
+
+// ---- Agent health & maintenance --------------------------------------------
+export const agentHealth = () => invoke<AgentHealth[]>("agent_health");
+export const listBranches = (projectId: string) =>
+  invoke<BranchInfo[]>("list_branches", { projectId });
+export const deleteBranch = (projectId: string, branch: string) =>
+  invoke<void>("delete_branch", { projectId, branch });
+export const pruneWorktrees = (projectId: string) =>
+  invoke<void>("prune_worktrees", { projectId });
 
 // ---- Updates ---------------------------------------------------------------
 export const beginDrain = () => invoke<void>("begin_drain");

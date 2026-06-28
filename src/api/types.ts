@@ -228,6 +228,19 @@ export interface SessionDiff {
   truncated: boolean;
 }
 
+export interface AgentHealth {
+  agent: AgentKind;
+  binary: string;
+  available: boolean;
+  version: string | null;
+}
+
+export interface BranchInfo {
+  name: string;
+  merged: boolean;
+  active: boolean;
+}
+
 export interface PullRequest {
   number: number;
   title: string;

@@ -12,6 +12,7 @@ import { CreateTaskModal } from "../components/CreateTaskModal";
 import { UpcomingTasks } from "../components/UpcomingTasks";
 import { ProjectHealth } from "../components/ProjectHealth";
 import { ProjectMemoryPanel } from "../components/ProjectMemoryPanel";
+import { BranchMaintenance } from "../components/BranchMaintenance";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
 import { formatCost, formatRelative } from "../lib/format";
 
@@ -240,6 +241,8 @@ export function ProjectDetailView() {
       <div className="mb-5"><ProjectSettings project={project} /></div>
 
       <div className="mb-5"><ProjectMemoryPanel projectId={project.id} /></div>
+
+      <div className="mb-5"><BranchMaintenance projectId={project.id} /></div>
 
       <UpcomingTasks projectId={project.id} />
 

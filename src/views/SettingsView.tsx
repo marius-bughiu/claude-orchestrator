@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, AlertTriangle } from "lucide-react";
+import { Save, AlertTriangle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
 import type { AgentKind, PermissionMode, Settings, WebhookConfig } from "../api/types";
@@ -28,11 +28,18 @@ export function SettingsView() {
   const refreshStatus = useStore((s) => s.refreshStatus);
   const [draft, setDraft] = useState<Settings | null>(storeSettings);
   const [saved, setSaved] = useState(false);
+  const [health, setHealth] = useState<Record<string, { available: boolean; version: string | null }>>({});
 
   useEffect(() => {
     if (!storeSettings) refreshSettings();
     else setDraft(storeSettings);
   }, [storeSettings, refreshSettings]);
+
+  const loadHealth = () =>
+    api.agentHealth().then((hs) => {
+      setHealth(Object.fromEntries(hs.map((h) => [h.agent, { available: h.available, version: h.version }])));
+    }).catch(() => {});
+  useEffect(() => { loadHealth(); }, []);
 
   if (!draft) return <div className="p-6 text-sm text-neutral-500">Loading settings…</div>;
 
@@ -225,14 +232,31 @@ export function SettingsView() {
       </section>
 
       <section className="card p-4">
-        <h3 className="mb-3 text-sm font-semibold text-neutral-200">Agents</h3>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-neutral-200">Agents</h3>
+          <button className="btn !py-1" onClick={loadHealth} title="Re-detect installed CLIs">
+            <RefreshCw size={13} /> Check CLIs
+          </button>
+        </div>
         <div className="flex flex-col gap-4">
           {AGENTS.map((kind) => {
             const cfg = agentCfg(kind);
+            const h = health[kind];
             return (
               <div key={kind} className="rounded-md border border-[var(--color-border)] p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-neutral-100">{AGENT_LABELS[kind]}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-neutral-100">{AGENT_LABELS[kind]}</span>
+                    {h && (
+                      <span
+                        className={`inline-flex items-center gap-1 text-[11px] ${h.available ? "text-emerald-400" : "text-neutral-600"}`}
+                        title={h.available ? (h.version ?? "installed") : "not found on PATH"}
+                      >
+                        {h.available ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                        {h.available ? (h.version ? h.version.slice(0, 28) : "installed") : "not found"}
+                      </span>
+                    )}
+                  </div>
                   <label className="flex items-center gap-2 text-xs text-neutral-400">
                     <input type="checkbox" checked={cfg.enabled} onChange={(e) => setAgent(kind, { enabled: e.target.checked })} />
                     enabled

@@ -81,6 +81,25 @@ await capture("light", ["dashboard", "projects"]);
   await ctx.close();
 }
 
+// First-run onboarding overlay (no projects yet).
+{
+  const ctx = await browser.newContext({ viewport: { width: 1320, height: 860 }, deviceScaleFactor: 2, colorScheme: "dark" });
+  await ctx.addInitScript(mock);
+  await ctx.addInitScript(() => {
+    localStorage.removeItem("orchestrator.onboarded");
+    window.__SHOT_MOCK__.projects = [];
+  });
+  const page = await ctx.newPage();
+  await page.goto(base + "/#/dashboard", { waitUntil: "networkidle" });
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: join(outDir, "onboarding-welcome.png") });
+  await page.getByText("Get started").click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: join(outDir, "onboarding-agents.png") });
+  console.log("shot: onboarding");
+  await ctx.close();
+}
+
 // Session detail with the Changes (diff) panel expanded.
 {
   const ctx = await browser.newContext({ viewport: { width: 1320, height: 980 }, deviceScaleFactor: 2, colorScheme: "dark" });

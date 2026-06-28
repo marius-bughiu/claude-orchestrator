@@ -463,6 +463,30 @@ pub struct PullRequest {
     pub mergeable: Option<String>,
 }
 
+/// Detection result for one agent CLI: whether its binary is on PATH and, if so,
+/// the version string it reports.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentHealth {
+    pub agent: AgentKind,
+    /// The binary name/path probed.
+    pub binary: String,
+    pub available: bool,
+    /// First line of `<binary> --version`, if it ran.
+    pub version: Option<String>,
+}
+
+/// A managed (orchestrator-created) branch in a project repo, for cleanup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchInfo {
+    pub name: String,
+    /// True if the branch is already merged into the repo's base branch.
+    pub merged: bool,
+    /// True if a currently-running session is working on this branch.
+    pub active: bool,
+}
+
 /// A project's accumulated memory: auto-generated context and learned lessons.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

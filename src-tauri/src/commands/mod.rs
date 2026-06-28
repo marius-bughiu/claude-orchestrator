@@ -351,6 +351,31 @@ pub fn session_diff(state: State<AppState>, id: String) -> CmdResult<SessionDiff
     state.engine.session_diff(&id).map_err(err)
 }
 
+// ---- Agent health & maintenance --------------------------------------------
+
+#[tauri::command]
+pub fn agent_health(state: State<AppState>) -> CmdResult<Vec<AgentHealth>> {
+    state.engine.agent_health().map_err(err)
+}
+
+#[tauri::command]
+pub fn list_branches(state: State<AppState>, project_id: String) -> CmdResult<Vec<BranchInfo>> {
+    state.engine.list_branches(&project_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn delete_branch(state: State<AppState>, project_id: String, branch: String) -> CmdResult<()> {
+    state
+        .engine
+        .delete_branch(&project_id, &branch)
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn prune_worktrees(state: State<AppState>, project_id: String) -> CmdResult<()> {
+    state.engine.prune_worktrees(&project_id).map_err(err)
+}
+
 // ---- Updates ---------------------------------------------------------------
 
 /// Begin draining for an update: stop scheduling new work. The UI then polls

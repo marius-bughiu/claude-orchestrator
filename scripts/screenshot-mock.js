@@ -145,6 +145,23 @@ window.__TAURI_INTERNALS__ = {
         return Promise.resolve(map[args.projectId] || []);
       }
       case "merge_pull_request": return Promise.resolve(null);
+      case "agent_health": return Promise.resolve([
+        { agent: "claude", binary: "claude", available: true, version: "claude 1.2.3 (Claude Code)" },
+        { agent: "gemini", binary: "gemini", available: true, version: "gemini-cli 0.4.0" },
+        { agent: "codex", binary: "codex", available: false, version: null },
+      ]);
+      case "list_branches": {
+        const map = {
+          p1: [
+            { name: "orchestrator/add-streaming-1a2b3c4d", merged: false, active: true },
+            { name: "orchestrator/fix-scheduler-99aa", merged: false, active: false },
+            { name: "orchestrator/docs-sweep-7f3e", merged: true, active: false },
+          ],
+        };
+        return Promise.resolve(map[args.projectId] || []);
+      }
+      case "delete_branch":
+      case "prune_worktrees": return Promise.resolve(null);
       case "session_diff": return Promise.resolve({
         available: true,
         branch: "orchestrator/add-streaming-1a2b3c4d",

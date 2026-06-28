@@ -5,6 +5,7 @@ import { UsageBar } from "./UsageBar";
 import { UpdateBanner } from "./UpdateBanner";
 import { UsageAlertBanner } from "./UsageAlertBanner";
 import { CommandPalette } from "./CommandPalette";
+import { Onboarding } from "./Onboarding";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { useStore } from "../store";
@@ -26,6 +27,7 @@ export function Layout() {
 
   return (
     <div className="flex h-full flex-col">
+      <Onboarding />
       <CommandPalette />
       <UsageBar />
       <UpdateBanner />

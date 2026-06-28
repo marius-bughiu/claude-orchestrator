@@ -865,6 +865,96 @@ impl Engine {
         Ok(created)
     }
 
+    /// Detect each agent CLI: whether its configured binary is on PATH and, if
+    /// so, the version it reports. Used by the settings panel and onboarding.
+    pub fn agent_health(&self) -> Result<Vec<AgentHealth>> {
+        let settings = self.db.get_settings()?;
+        let mut out = Vec::new();
+        for agent in AgentKind::ALL {
+            let cfg = settings.agent_config(agent);
+            let binary = cfg
+                .binary
+                .clone()
+                .unwrap_or_else(|| agents::adapter_for(agent).default_binary().to_string());
+            let available = util::binary_available(&binary);
+            let version = if available {
+                std::process::Command::new(&binary)
+                    .arg("--version")
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .and_then(|o| {
+                        String::from_utf8_lossy(&o.stdout)
+                            .lines()
+                            .next()
+                            .map(|l| l.trim().to_string())
+                            .filter(|l| !l.is_empty())
+                    })
+            } else {
+                None
+            };
+            out.push(AgentHealth {
+                agent,
+                binary,
+                available,
+                version,
+            });
+        }
+        Ok(out)
+    }
+
+    /// List orchestrator-created branches in a project repo, flagging which are
+    /// merged and which a running session is still using.
+    pub fn list_branches(&self, project_id: &str) -> Result<Vec<BranchInfo>> {
+        let project = self.db.get_project(project_id)?;
+        let repo = PathBuf::from(&project.path);
+        if !worktree::is_git_repo(&repo) {
+            return Ok(Vec::new());
+        }
+        let mut branches = worktree::list_orchestrator_branches(&repo)?;
+        let active: Vec<String> = self
+            .db
+            .active_sessions()?
+            .into_iter()
+            .filter_map(|s| s.branch)
+            .collect();
+        for b in &mut branches {
+            b.active = active.contains(&b.name);
+        }
+        Ok(branches)
+    }
+
+    /// Delete a local orchestrator branch from a project repo. Refuses to delete
+    /// a branch a running session is using.
+    pub fn delete_branch(&self, project_id: &str, branch: &str) -> Result<()> {
+        if !branch.starts_with(worktree::BRANCH_PREFIX) {
+            return Err(CoreError::Invalid(format!(
+                "refusing to delete non-orchestrator branch {branch}"
+            )));
+        }
+        let in_use = self
+            .db
+            .active_sessions()?
+            .into_iter()
+            .any(|s| s.branch.as_deref() == Some(branch));
+        if in_use {
+            return Err(CoreError::Invalid(format!(
+                "branch {branch} is in use by a running session"
+            )));
+        }
+        let project = self.db.get_project(project_id)?;
+        worktree::delete_branch(Path::new(&project.path), branch);
+        self.log("info", format!("deleted branch {branch}"));
+        Ok(())
+    }
+
+    /// Prune stale git worktree metadata for a project.
+    pub fn prune_worktrees(&self, project_id: &str) -> Result<()> {
+        let project = self.db.get_project(project_id)?;
+        worktree::prune_worktrees(Path::new(&project.path))?;
+        Ok(())
+    }
+
     /// Compute the code changes a task session made on its worktree branch. The
     /// diff is read from the live worktree while the task runs (or before its
     /// changes are committed), and from the committed branch afterward.
