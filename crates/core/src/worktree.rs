@@ -178,8 +178,21 @@ pub fn open_pr(wt: &Path, title: &str, body: &str, base: &str) -> Result<Option<
     }
 }
 
+/// Whether `branch` would conflict if merged onto `base`, computed without
+/// touching the working tree via `git merge-tree --write-tree`. Returns `None`
+/// when git can't determine it (e.g. an unrelated history or an old git).
+pub fn conflicts_with(repo: &Path, base: &str, branch: &str) -> Option<bool> {
+    let out = git(repo, &["merge-tree", "--write-tree", base, branch]).ok()?;
+    match out.status.code() {
+        Some(0) => Some(false), // clean merge
+        Some(1) => Some(true),  // conflicts
+        _ => None,              // could not determine
+    }
+}
+
 /// List orchestrator-created branches in a repo, flagging which are already
-/// merged into the repo's base branch. `active` is filled in by the caller.
+/// merged into the repo's base branch and which would conflict if merged.
+/// `active` is filled in by the caller.
 pub fn list_orchestrator_branches(repo: &Path) -> Result<Vec<BranchInfo>> {
     let pattern = format!("{BRANCH_PREFIX}*");
     let all = git_ok(
@@ -202,10 +215,18 @@ pub fn list_orchestrator_branches(repo: &Path) -> Result<Vec<BranchInfo>> {
     let merged: Vec<&str> = merged_out.lines().map(|l| l.trim()).collect();
     let mut branches = Vec::new();
     for name in all.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+        let is_merged = merged.contains(&name);
+        // Only probe unmerged branches for conflicts (merged ones are moot).
+        let conflicted = if is_merged {
+            None
+        } else {
+            conflicts_with(repo, &base, name)
+        };
         branches.push(BranchInfo {
             name: name.to_string(),
-            merged: merged.contains(&name),
+            merged: is_merged,
             active: false,
+            conflicted,
         });
     }
     Ok(branches)
@@ -427,6 +448,59 @@ mod tests {
             .unwrap();
         assert!(merged.merged);
         assert!(!open.merged);
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn detects_conflicting_branch() {
+        let repo = init_repo();
+        let cfg = |args: &[&str]| {
+            Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+        };
+        // A branch off the very first commit that edits README differently from
+        // the base's later edit will conflict on merge.
+        let first = git_ok(&repo, &["rev-list", "--max-parents=0", "HEAD"]).unwrap();
+        std::fs::write(repo.join("README.md"), "base change\n").unwrap();
+        cfg(&["commit", "-aqm", "base change"]);
+        let base = current_branch(&repo).unwrap();
+
+        cfg(&["branch", "orchestrator/conflict-1", first.trim()]);
+        let wt = worktrees_root().join(format!("c-{}", uuid::Uuid::new_v4()));
+        cfg(&[
+            "worktree",
+            "add",
+            &wt.to_string_lossy(),
+            "orchestrator/conflict-1",
+        ]);
+        std::fs::write(wt.join("README.md"), "branch change\n").unwrap();
+        commit_all(&wt, "branch change").unwrap();
+        remove(&repo, &wt).unwrap();
+
+        assert_eq!(
+            conflicts_with(&repo, &base, "orchestrator/conflict-1"),
+            Some(true)
+        );
+        // A branch that only adds a new file merges cleanly.
+        cfg(&["branch", "orchestrator/clean-2", base.as_str()]);
+        let wt2 = worktrees_root().join(format!("cl-{}", uuid::Uuid::new_v4()));
+        cfg(&[
+            "worktree",
+            "add",
+            &wt2.to_string_lossy(),
+            "orchestrator/clean-2",
+        ]);
+        std::fs::write(wt2.join("new.txt"), "x").unwrap();
+        commit_all(&wt2, "add new").unwrap();
+        remove(&repo, &wt2).unwrap();
+        assert_eq!(
+            conflicts_with(&repo, &base, "orchestrator/clean-2"),
+            Some(false)
+        );
         std::fs::remove_dir_all(&repo).ok();
     }
 

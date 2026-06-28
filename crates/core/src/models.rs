@@ -485,6 +485,9 @@ pub struct BranchInfo {
     pub merged: bool,
     /// True if a currently-running session is working on this branch.
     pub active: bool,
+    /// Whether the branch merges cleanly onto the base: `Some(true)` = conflicts,
+    /// `Some(false)` = clean, `None` = could not determine (or already merged).
+    pub conflicted: Option<bool>,
 }
 
 /// A project's accumulated memory: auto-generated context and learned lessons.

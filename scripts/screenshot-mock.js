@@ -153,9 +153,9 @@ window.__TAURI_INTERNALS__ = {
       case "list_branches": {
         const map = {
           p1: [
-            { name: "orchestrator/add-streaming-1a2b3c4d", merged: false, active: true },
-            { name: "orchestrator/fix-scheduler-99aa", merged: false, active: false },
-            { name: "orchestrator/docs-sweep-7f3e", merged: true, active: false },
+            { name: "orchestrator/add-streaming-1a2b3c4d", merged: false, active: true, conflicted: false },
+            { name: "orchestrator/fix-scheduler-99aa", merged: false, active: false, conflicted: true },
+            { name: "orchestrator/docs-sweep-7f3e", merged: true, active: false, conflicted: null },
           ],
         };
         return Promise.resolve(map[args.projectId] || []);

@@ -239,6 +239,7 @@ export interface BranchInfo {
   name: string;
   merged: boolean;
   active: boolean;
+  conflicted: boolean | null;
 }
 
 export interface PullRequest {

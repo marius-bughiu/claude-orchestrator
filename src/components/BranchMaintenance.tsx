@@ -68,6 +68,11 @@ export function BranchMaintenance({ projectId }: { projectId: string }) {
               <span className="truncate font-mono text-xs text-neutral-300">{b.name}</span>
               {b.merged && <span className="chip border border-emerald-500/30 text-emerald-400">merged</span>}
               {b.active && <span className="chip border border-sky-500/30 text-sky-400">in use</span>}
+              {b.conflicted === true && (
+                <span className="chip border border-rose-500/30 text-rose-400" title="Will not merge cleanly onto the base branch">
+                  conflicts
+                </span>
+              )}
               <button
                 className="btn btn-danger ml-auto !px-2 !py-1"
                 disabled={b.active || busy === b.name}
