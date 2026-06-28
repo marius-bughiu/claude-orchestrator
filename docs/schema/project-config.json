@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/marius-bughiu/claude-orchestrator/blob/main/docs/schema/project-config.json",
+  "title": "Claude Orchestrator project config",
+  "description": "Schema for a project's .orchestrator/config.json file.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1, "description": "Config schema version." },
+    "defaultAgent": {
+      "type": "string",
+      "enum": ["claude", "gemini", "codex"],
+      "description": "Agent used for tasks that don't specify one, and for roadmap/verify sessions."
+    },
+    "maxConcurrent": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Per-project cap on concurrent sessions. null = use the global setting."
+    },
+    "roadmapEnabled": {
+      "type": "boolean",
+      "description": "Whether the roadmap loop may auto-generate tasks when the queue empties."
+    },
+    "verifyEnabled": {
+      "type": "boolean",
+      "description": "Whether finished tasks are auto-verified by a verifier session."
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form labels associated with the project."
+    }
+  }
+}
