@@ -42,6 +42,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             let dir = data_dir(&handle);
@@ -84,6 +86,9 @@ pub fn run() {
             commands::refresh_scheduled,
             commands::set_scheduled_enabled,
             commands::upcoming_tasks,
+            commands::usage_series,
+            commands::begin_drain,
+            commands::cancel_drain,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Claude Orchestrator");

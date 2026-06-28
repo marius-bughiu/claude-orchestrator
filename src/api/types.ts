@@ -101,23 +101,46 @@ export interface SessionEvent {
 }
 
 export interface AgentLimits {
+  sessionCostUsd: number | null;
+  weeklyCostUsd: number | null;
+  sessionTokenLimit: number | null;
+  weeklyTokenLimit: number | null;
+}
+
+export interface WindowUsage {
+  usage: TokenUsage;
+  windowHours: number;
+  windowStartedAt: string | null;
   costLimitUsd: number | null;
   tokenLimit: number | null;
+  costPct: number | null;
+  tokenPct: number | null;
 }
 
 export interface AgentUsage {
   agent: AgentKind;
   available: boolean;
-  window: TokenUsage;
-  total: TokenUsage;
   activeSessions: number;
-  limits: AgentLimits;
-  windowStartedAt: string;
-  windowHours: number;
+  session: WindowUsage;
+  weekly: WindowUsage;
+  total: TokenUsage;
+}
+
+export interface UsagePoint {
+  period: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  numTurns: number;
+  sessions: number;
 }
 
 export interface OrchestratorStatus {
   running: boolean;
+  draining: boolean;
   activeSessions: number;
   maxConcurrent: number;
   pendingTasks: number;
@@ -144,7 +167,8 @@ export interface AgentConfig {
   model: string | null;
   extraArgs: string[];
   limits: AgentLimits;
-  windowHours: number;
+  sessionWindowHours: number;
+  weeklyWindowHours: number;
   enabled: boolean;
 }
 

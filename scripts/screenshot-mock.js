@@ -25,14 +25,35 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const usage = (i, o, cr, cost, turns) => ({ inputTokens: i, outputTokens: o, cacheReadTokens: cr, cacheCreationTokens: 0, totalCostUsd: cost, numTurns: turns });
+  const win = (u, hours, costLimit) => ({
+    usage: u, windowHours: hours, windowStartedAt: iso(-hours * 3.6e6),
+    costLimitUsd: costLimit, tokenLimit: null,
+    costPct: costLimit ? u.totalCostUsd / costLimit : null, tokenPct: null,
+  });
   const status = {
-    running: true, activeSessions: 2, maxConcurrent: 3, pendingTasks: 5, projects: 3,
+    running: true, draining: false, activeSessions: 2, maxConcurrent: 3, pendingTasks: 5, projects: 3,
     agents: [
-      { agent: "claude", available: true, window: usage(820000, 240000, 1900000, 4.21, 18), total: usage(0,0,0,52.4,0), activeSessions: 1, limits: { costLimitUsd: 25, tokenLimit: null }, windowStartedAt: iso(-1.8e7), windowHours: 5 },
-      { agent: "gemini", available: true, window: usage(140000, 60000, 0, 0.83, 6), total: usage(0,0,0,6.1,0), activeSessions: 1, limits: { costLimitUsd: null, tokenLimit: null }, windowStartedAt: iso(-1.8e7), windowHours: 5 },
-      { agent: "codex", available: false, window: usage(0,0,0,0,0), total: usage(0,0,0,0,0), activeSessions: 0, limits: { costLimitUsd: null, tokenLimit: null }, windowStartedAt: iso(-1.8e7), windowHours: 5 },
+      { agent: "claude", available: true, activeSessions: 1,
+        session: win(usage(820000, 240000, 1900000, 4.21, 18), 5, 8), weekly: win(usage(5200000, 1400000, 9800000, 22.4, 96), 168, 50), total: usage(0,0,0,52.4,0) },
+      { agent: "gemini", available: true, activeSessions: 1,
+        session: win(usage(140000, 60000, 0, 0.83, 6), 5, null), weekly: win(usage(900000, 320000, 0, 4.6, 28), 168, null), total: usage(0,0,0,6.1,0) },
+      { agent: "codex", available: false, activeSessions: 0,
+        session: win(usage(0,0,0,0,0), 5, null), weekly: win(usage(0,0,0,0,0), 168, null), total: usage(0,0,0,0,0) },
     ],
   };
+
+  // Usage time-series for the dashboard.
+  const usagePoint = (period, base) => ({
+    period, inputTokens: base * 8000, outputTokens: base * 2500, cacheReadTokens: base * 14000,
+    cacheCreationTokens: base * 400, totalTokens: base * 24900, costUsd: base * 0.42, numTurns: base * 6, sessions: base,
+  });
+  const daySeries = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(now - (13 - i) * 8.64e7);
+    const period = d.toISOString().slice(0, 10);
+    return usagePoint(period, 2 + Math.round(6 * Math.abs(Math.sin(i * 1.1))));
+  });
+  const monthSeries = ["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"].map((p, i) => usagePoint(p, 40 + i * 14));
+  const yearSeries = ["2024","2025","2026"].map((p, i) => usagePoint(p, 180 + i * 120));
 
   const timeline = [
     { sessionId: "s1", taskId: "t1", taskTitle: tasks[0].title, projectId: "p1", projectName: "claude-orchestrator", agent: "claude", kind: "task", status: "running", startedAt: iso(-180e3), endedAt: null, costUsd: 0.42 },
@@ -76,7 +97,7 @@ window.__SHOT_MOCK__ = (() => {
     { id: 6, sessionId: "s1", kind: "assistant", text: "I'll add a partials buffer keyed by message id and flush on message stop.", data: null, createdAt: iso(-150e3) },
   ];
 
-  return { projects, tasks, status, timeline, scheduled, upcoming, settings, session, sessionEvents };
+  return { projects, tasks, status, timeline, scheduled, upcoming, settings, session, sessionEvents, daySeries, monthSeries, yearSeries };
 })();
 
 window.__TAURI_INTERNALS__ = {
@@ -95,6 +116,12 @@ window.__TAURI_INTERNALS__ = {
       case "list_scheduled": return Promise.resolve(args.projectId ? m.scheduled.filter((s) => s.projectId === args.projectId) : m.scheduled);
       case "upcoming_tasks": return Promise.resolve(args.projectId ? m.upcoming.filter((u) => u.projectId === args.projectId) : m.upcoming);
       case "get_settings": return Promise.resolve(m.settings);
+      case "usage_series": {
+        const g = args.granularity;
+        return Promise.resolve(g === "year" ? m.yearSeries : g === "month" ? m.monthSeries : m.daySeries);
+      }
+      case "begin_drain":
+      case "cancel_drain": return Promise.resolve(null);
       case "get_session": return Promise.resolve(m.session);
       case "get_session_events": return Promise.resolve(m.sessionEvents);
       case "list_sessions": return Promise.resolve([m.session]);

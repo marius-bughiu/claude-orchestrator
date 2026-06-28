@@ -29,12 +29,30 @@ pub struct AgentConfig {
     /// Model id to pass to the agent, if any.
     pub model: Option<String>,
     /// Extra CLI args appended to every invocation.
+    #[serde(default)]
     pub extra_args: Vec<String>,
     /// Configured usage limits for the header display.
+    #[serde(default)]
     pub limits: AgentLimits,
-    /// Rolling usage window length in hours (Claude plans reset every 5h, hence 5).
-    pub window_hours: u32,
+    /// Short ("session") rolling window length in hours (Claude plans reset every
+    /// 5h, hence 5).
+    #[serde(default = "default_session_window_hours", alias = "windowHours")]
+    pub session_window_hours: u32,
+    /// Weekly rolling window length in hours (default 168 = 7 days).
+    #[serde(default = "default_weekly_window_hours")]
+    pub weekly_window_hours: u32,
+    #[serde(default = "default_true")]
     pub enabled: bool,
+}
+
+fn default_session_window_hours() -> u32 {
+    5
+}
+fn default_weekly_window_hours() -> u32 {
+    168
+}
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AgentConfig {
@@ -44,7 +62,8 @@ impl Default for AgentConfig {
             model: None,
             extra_args: Vec::new(),
             limits: AgentLimits::default(),
-            window_hours: 5,
+            session_window_hours: 5,
+            weekly_window_hours: 168,
             enabled: true,
         }
     }

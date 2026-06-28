@@ -327,31 +327,65 @@ pub struct SessionEvent {
     pub created_at: DateTime<Utc>,
 }
 
+/// Usage within one rolling window (session or weekly), with optional configured
+/// limits and the resulting fraction used.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowUsage {
+    pub usage: TokenUsage,
+    pub window_hours: u32,
+    pub window_started_at: Option<DateTime<Utc>>,
+    pub cost_limit_usd: Option<f64>,
+    pub token_limit: Option<u64>,
+    /// Fraction of the cost limit used (0.0–1.0+), if a limit is configured.
+    pub cost_pct: Option<f64>,
+    /// Fraction of the token limit used (0.0–1.0+), if a limit is configured.
+    pub token_pct: Option<f64>,
+}
+
 /// Per-agent usage rollup with optional configured limits, surfaced in the top bar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentUsage {
     pub agent: AgentKind,
     pub available: bool,
-    /// Usage accumulated within the current rolling window.
-    pub window: TokenUsage,
+    pub active_sessions: u32,
+    /// Usage within the short (session) window — e.g. the rolling 5h plan window.
+    pub session: WindowUsage,
+    /// Usage within the weekly window.
+    pub weekly: WindowUsage,
     /// Usage since the app started tracking (all time).
     pub total: TokenUsage,
-    pub active_sessions: u32,
-    /// User-configured limits for display (e.g. plan cost cap per window).
-    pub limits: AgentLimits,
-    /// Start of the current rolling window.
-    pub window_started_at: DateTime<Utc>,
-    pub window_hours: u32,
 }
 
+/// User-configured usage limits for an agent (session + weekly cost/token caps).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentLimits {
-    /// Soft cost ceiling (USD) within the rolling window; None = untracked.
-    pub cost_limit_usd: Option<f64>,
-    /// Token ceiling within the rolling window; None = untracked.
-    pub token_limit: Option<u64>,
+    /// Cost ceiling (USD) within the session window.
+    pub session_cost_usd: Option<f64>,
+    /// Cost ceiling (USD) within the weekly window.
+    pub weekly_cost_usd: Option<f64>,
+    /// Token ceiling within the session window.
+    pub session_token_limit: Option<u64>,
+    /// Token ceiling within the weekly window.
+    pub weekly_token_limit: Option<u64>,
+}
+
+/// One bucket of aggregated usage over a time period (day/month/year) for charts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsagePoint {
+    /// Period key: "YYYY-MM-DD" (day), "YYYY-MM" (month), or "YYYY" (year).
+    pub period: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub total_tokens: u64,
+    pub cost_usd: f64,
+    pub num_turns: u32,
+    pub sessions: u32,
 }
 
 /// Snapshot of the whole orchestrator for the header / status views.
@@ -359,6 +393,8 @@ pub struct AgentLimits {
 #[serde(rename_all = "camelCase")]
 pub struct OrchestratorStatus {
     pub running: bool,
+    /// True while draining for an update: no new work is scheduled.
+    pub draining: bool,
     pub active_sessions: u32,
     pub max_concurrent: u32,
     pub pending_tasks: u32,

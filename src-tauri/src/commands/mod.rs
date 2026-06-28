@@ -229,3 +229,35 @@ pub fn upcoming_tasks(
         .upcoming(project_id.as_deref(), limit.unwrap_or(10) as usize)
         .map_err(err)
 }
+
+// ---- Dashboards ------------------------------------------------------------
+
+#[tauri::command]
+pub fn usage_series(
+    state: State<AppState>,
+    granularity: String,
+    agent: Option<AgentKind>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<UsagePoint>> {
+    state
+        .engine
+        .db()
+        .usage_series(&granularity, agent, limit.unwrap_or(30))
+        .map_err(err)
+}
+
+// ---- Updates ---------------------------------------------------------------
+
+/// Begin draining for an update: stop scheduling new work. The UI then polls
+/// status until `activeSessions` is zero before installing the update.
+#[tauri::command]
+pub fn begin_drain(state: State<AppState>) -> CmdResult<()> {
+    state.engine.begin_drain();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_drain(state: State<AppState>) -> CmdResult<()> {
+    state.engine.cancel_drain();
+    Ok(())
+}

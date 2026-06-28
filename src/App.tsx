@@ -6,6 +6,7 @@ import { ProjectDetailView } from "./views/ProjectDetailView";
 import { TasksView } from "./views/TasksView";
 import { TaskDetailView } from "./views/TaskDetailView";
 import { ScheduledView } from "./views/ScheduledView";
+import { DashboardView } from "./views/DashboardView";
 import { TimelineView } from "./views/TimelineView";
 import { SessionDetailView } from "./views/SessionDetailView";
 import { SettingsView } from "./views/SettingsView";
@@ -16,7 +17,8 @@ const router = createHashRouter([
     path: "/",
     element: <Layout />,
     children: [
-      { index: true, element: <Navigate to="/projects" replace /> },
+      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { path: "dashboard", element: <DashboardView /> },
       { path: "projects", element: <ProjectsView /> },
       { path: "projects/:id", element: <ProjectDetailView /> },
       { path: "tasks", element: <TasksView /> },

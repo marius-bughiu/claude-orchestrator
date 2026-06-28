@@ -28,6 +28,8 @@ pub struct Engine {
     /// session id -> cancel token for currently running sessions.
     running: Arc<Mutex<HashMap<String, CancelToken>>>,
     wake: Arc<Notify>,
+    /// When set, the scheduler stops allocating new work (draining for an update).
+    draining: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Engine {
@@ -37,7 +39,29 @@ impl Engine {
             sink,
             running: Arc::new(Mutex::new(HashMap::new())),
             wake: Arc::new(Notify::new()),
+            draining: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
+    }
+
+    pub fn is_draining(&self) -> bool {
+        self.draining.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Begin draining for an update: stop scheduling new work. Existing sessions
+    /// run to completion. The caller polls `status().active_sessions` until zero.
+    pub fn begin_drain(&self) {
+        self.draining
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.log("info", "draining: no new work will be scheduled");
+        self.emit(OrchestratorEvent::StatusChanged);
+    }
+
+    /// Cancel a drain (e.g. the user dismissed the update).
+    pub fn cancel_drain(&self) {
+        self.draining
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.emit(OrchestratorEvent::StatusChanged);
+        self.request_tick();
     }
 
     pub fn db(&self) -> &Db {
@@ -112,6 +136,7 @@ impl Engine {
         let settings = self.db.get_settings()?;
         Ok(OrchestratorStatus {
             running: settings.running,
+            draining: self.is_draining(),
             active_sessions: self.db.count_active_sessions()?,
             max_concurrent: settings.max_concurrent,
             pending_tasks: self.db.count_pending_tasks()?,
@@ -125,24 +150,68 @@ impl Engine {
         let mut out = Vec::new();
         for kind in AgentKind::ALL {
             let cfg = settings.agent_config(kind);
-            let window_hours = cfg.window_hours.max(1);
-            let window_start = now - chrono::Duration::hours(window_hours as i64);
             let binary = cfg
                 .binary
                 .clone()
                 .unwrap_or_else(|| agents::adapter_for(kind).default_binary().to_string());
+            let session = self.window_usage(
+                kind,
+                cfg.session_window_hours,
+                cfg.limits.session_cost_usd,
+                cfg.limits.session_token_limit,
+                now,
+            )?;
+            let weekly = self.window_usage(
+                kind,
+                cfg.weekly_window_hours,
+                cfg.limits.weekly_cost_usd,
+                cfg.limits.weekly_token_limit,
+                now,
+            )?;
             out.push(AgentUsage {
                 agent: kind,
                 available: util::binary_available(&binary),
-                window: self.db.usage_for_agent(kind, Some(window_start))?,
-                total: self.db.usage_for_agent(kind, None)?,
                 active_sessions: self.db.count_active_sessions_for_agent(kind)?,
-                limits: cfg.limits.clone(),
-                window_started_at: window_start,
-                window_hours,
+                session,
+                weekly,
+                total: self.db.usage_for_agent(kind, None)?,
             });
         }
         Ok(out)
+    }
+
+    fn window_usage(
+        &self,
+        agent: AgentKind,
+        hours: u32,
+        cost_limit: Option<f64>,
+        token_limit: Option<u64>,
+        now: DateTime<Utc>,
+    ) -> Result<WindowUsage> {
+        let hours = hours.max(1);
+        let start = now - chrono::Duration::hours(hours as i64);
+        let usage = self.db.usage_for_agent(agent, Some(start))?;
+        let tokens = usage.input_tokens
+            + usage.output_tokens
+            + usage.cache_read_tokens
+            + usage.cache_creation_tokens;
+        let cost_pct = cost_limit.map(|l| {
+            if l > 0.0 {
+                usage.total_cost_usd / l
+            } else {
+                0.0
+            }
+        });
+        let token_pct = token_limit.map(|l| if l > 0 { tokens as f64 / l as f64 } else { 0.0 });
+        Ok(WindowUsage {
+            usage,
+            window_hours: hours,
+            window_started_at: Some(start),
+            cost_limit_usd: cost_limit,
+            token_limit,
+            cost_pct,
+            token_pct,
+        })
     }
 
     // ---- Controls -----------------------------------------------------------
@@ -217,7 +286,7 @@ impl Engine {
 
     async fn tick(self: &Arc<Self>) -> Result<()> {
         let settings = self.db.get_settings()?;
-        if !settings.running {
+        if !settings.running || self.is_draining() {
             return Ok(());
         }
 
@@ -613,7 +682,7 @@ impl Engine {
     /// nudge per active session so concurrent work spreads out too.
     fn agent_load(&self, agent: AgentKind, settings: &Settings, now: DateTime<Utc>) -> f64 {
         let cfg = settings.agent_config(agent);
-        let window_start = now - chrono::Duration::hours(cfg.window_hours.max(1) as i64);
+        let window_start = now - chrono::Duration::hours(cfg.session_window_hours.max(1) as i64);
         let cost = self
             .db
             .usage_for_agent(agent, Some(window_start))

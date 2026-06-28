@@ -10,6 +10,7 @@ import type {
   Project,
   ScheduledTask,
   UpcomingTask,
+  UsagePoint,
   Session,
   SessionEvent,
   Settings,
@@ -78,6 +79,22 @@ export const upcomingTasks = (projectId?: string, limit?: number) =>
     projectId: projectId ?? null,
     limit: limit ?? null,
   });
+
+// ---- Dashboards ------------------------------------------------------------
+export const usageSeries = (
+  granularity: "day" | "month" | "year",
+  agent?: string,
+  limit?: number,
+) =>
+  invoke<UsagePoint[]>("usage_series", {
+    granularity,
+    agent: agent ?? null,
+    limit: limit ?? null,
+  });
+
+// ---- Updates ---------------------------------------------------------------
+export const beginDrain = () => invoke<void>("begin_drain");
+export const cancelDrain = () => invoke<void>("cancel_drain");
 
 // ---- Events ----------------------------------------------------------------
 export function onOrchestratorEvent(

@@ -6,6 +6,7 @@ import { useStore } from "../store";
 import * as api from "../api";
 import type { ScheduledTask } from "../api/types";
 import { AgentBadge } from "../components/Badges";
+import { Switch } from "../components/Switch";
 import { EmptyState } from "../components/Modal";
 
 function nextRunLabel(iso: string | null): string {
@@ -66,13 +67,11 @@ function Row({ item }: { item: ScheduledTask }) {
       <div className="w-20 text-right text-xs text-neutral-400" title={item.nextRun ?? ""}>
         {item.valid ? nextRunLabel(item.nextRun) : "—"}
       </div>
-      <button
-        className={clsx("btn !px-2 !py-1", item.enabled ? "text-emerald-300" : "text-neutral-500")}
-        onClick={toggle}
-        title={item.enabled ? "Enabled — click to pause" : "Paused — click to enable"}
-      >
-        {item.enabled ? "On" : "Off"}
-      </button>
+      <Switch
+        checked={item.enabled}
+        onChange={toggle}
+        label={item.enabled ? "Disable scheduled task" : "Enable scheduled task"}
+      />
     </div>
   );
 }

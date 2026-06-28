@@ -150,6 +150,52 @@ fn session_and_events_and_usage() {
 }
 
 #[test]
+fn usage_series_buckets_by_day() {
+    let db = Db::open_in_memory().unwrap();
+    db.upsert_project(&project("p1")).unwrap();
+    let day1 = "2026-06-01T10:00:00Z"
+        .parse::<chrono::DateTime<Utc>>()
+        .unwrap();
+    let day1b = "2026-06-01T18:00:00Z"
+        .parse::<chrono::DateTime<Utc>>()
+        .unwrap();
+    let day2 = "2026-06-02T09:00:00Z"
+        .parse::<chrono::DateTime<Utc>>()
+        .unwrap();
+    let u = TokenUsage {
+        input_tokens: 100,
+        output_tokens: 50,
+        total_cost_usd: 1.0,
+        num_turns: 2,
+        ..Default::default()
+    };
+    db.insert_usage("u1", AgentKind::Claude, None, &u, day1)
+        .unwrap();
+    db.insert_usage("u2", AgentKind::Claude, None, &u, day1b)
+        .unwrap();
+    db.insert_usage("u3", AgentKind::Gemini, None, &u, day2)
+        .unwrap();
+
+    let series = db.usage_series("day", None, 30).unwrap();
+    assert_eq!(series.len(), 2);
+    assert_eq!(series[0].period, "2026-06-01");
+    assert_eq!(series[0].input_tokens, 200);
+    assert!((series[0].cost_usd - 2.0).abs() < 1e-9);
+    assert_eq!(series[1].period, "2026-06-02");
+
+    // Agent-scoped.
+    let claude = db.usage_series("day", Some(AgentKind::Claude), 30).unwrap();
+    assert_eq!(claude.len(), 1);
+    assert_eq!(claude[0].input_tokens, 200);
+
+    // Month granularity collapses both days.
+    let months = db.usage_series("month", None, 30).unwrap();
+    assert_eq!(months.len(), 1);
+    assert_eq!(months[0].period, "2026-06");
+    assert_eq!(months[0].input_tokens, 300);
+}
+
+#[test]
 fn orphan_reconciliation() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();

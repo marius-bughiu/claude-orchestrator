@@ -9,6 +9,7 @@ use crate::error::{CoreError, Result};
 use crate::models::*;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -649,6 +650,91 @@ impl Db {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    }
+
+    // ---- Usage time series --------------------------------------------------
+
+    /// Aggregate usage and session counts bucketed by period. `granularity` is
+    /// "day" | "month" | "year". Returns the most recent `limit` buckets,
+    /// chronologically ascending. Optionally scoped to one agent.
+    pub fn usage_series(
+        &self,
+        granularity: &str,
+        agent: Option<AgentKind>,
+        limit: u32,
+    ) -> Result<Vec<UsagePoint>> {
+        // Period key length over the RFC3339 timestamp prefix (UTC).
+        let plen = match granularity {
+            "year" => 4,
+            "month" => 7,
+            _ => 10, // day
+        };
+        let agent_str = agent.map(|a| a.as_str());
+        let conn = self.lock();
+        let mut map: BTreeMap<String, UsagePoint> = BTreeMap::new();
+
+        let usage_sql = format!(
+            "SELECT substr(created_at,1,{plen}) AS period,
+                COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+                COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_creation_tokens),0),
+                COALESCE(SUM(cost_usd),0.0), COALESCE(SUM(num_turns),0)
+             FROM usage_records
+             WHERE (?1 IS NULL OR agent = ?1)
+             GROUP BY period"
+        );
+        {
+            let mut stmt = conn.prepare(&usage_sql)?;
+            let rows = stmt.query_map(params![agent_str], |r| {
+                let input = r.get::<_, i64>(1)? as u64;
+                let output = r.get::<_, i64>(2)? as u64;
+                let cache_read = r.get::<_, i64>(3)? as u64;
+                let cache_creation = r.get::<_, i64>(4)? as u64;
+                Ok(UsagePoint {
+                    period: r.get::<_, String>(0)?,
+                    input_tokens: input,
+                    output_tokens: output,
+                    cache_read_tokens: cache_read,
+                    cache_creation_tokens: cache_creation,
+                    total_tokens: input + output + cache_read + cache_creation,
+                    cost_usd: r.get(5)?,
+                    num_turns: r.get::<_, i64>(6)? as u32,
+                    sessions: 0,
+                })
+            })?;
+            for p in rows {
+                let p = p?;
+                map.insert(p.period.clone(), p);
+            }
+        }
+
+        let sessions_sql = format!(
+            "SELECT substr(created_at,1,{plen}) AS period, COUNT(*)
+             FROM sessions
+             WHERE (?1 IS NULL OR agent = ?1)
+             GROUP BY period"
+        );
+        {
+            let mut stmt = conn.prepare(&sessions_sql)?;
+            let rows = stmt.query_map(params![agent_str], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u32))
+            })?;
+            for row in rows {
+                let (period, n) = row?;
+                map.entry(period.clone())
+                    .or_insert_with(|| UsagePoint {
+                        period,
+                        ..Default::default()
+                    })
+                    .sessions = n;
+            }
+        }
+
+        let mut points: Vec<UsagePoint> = map.into_values().collect();
+        let limit = limit.max(1) as usize;
+        if points.len() > limit {
+            points = points.split_off(points.len() - limit);
+        }
+        Ok(points)
     }
 }
 

@@ -35,7 +35,9 @@ export function SettingsView() {
   };
   const agentCfg = (kind: AgentKind) =>
     draft.agents[kind] ?? {
-      binary: null, model: null, extraArgs: [], limits: { costLimitUsd: null, tokenLimit: null }, windowHours: 5, enabled: true,
+      binary: null, model: null, extraArgs: [],
+      limits: { sessionCostUsd: null, weeklyCostUsd: null, sessionTokenLimit: null, weeklyTokenLimit: null },
+      sessionWindowHours: 5, weeklyWindowHours: 168, enabled: true,
     };
 
   const save = async () => {
@@ -133,7 +135,7 @@ export function SettingsView() {
                     enabled
                   </label>
                 </div>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                   <label className="text-xs text-neutral-400">
                     Binary
                     <input className="input mt-1" placeholder={kind} value={cfg.binary ?? ""}
@@ -144,16 +146,29 @@ export function SettingsView() {
                     <input className="input mt-1" placeholder="default" value={cfg.model ?? ""}
                       onChange={(e) => setAgent(kind, { model: e.target.value || null })} />
                   </label>
+                  <div />
                   <label className="text-xs text-neutral-400">
-                    Cost limit ($/window)
+                    Session limit ($)
                     <input type="number" min={0} step="0.5" className="input mt-1" placeholder="none"
-                      value={cfg.limits.costLimitUsd ?? ""}
-                      onChange={(e) => setAgent(kind, { limits: { ...cfg.limits, costLimitUsd: e.target.value === "" ? null : Number(e.target.value) } })} />
+                      value={cfg.limits.sessionCostUsd ?? ""}
+                      onChange={(e) => setAgent(kind, { limits: { ...cfg.limits, sessionCostUsd: e.target.value === "" ? null : Number(e.target.value) } })} />
                   </label>
                   <label className="text-xs text-neutral-400">
-                    Window (hours)
-                    <input type="number" min={1} className="input mt-1" value={cfg.windowHours}
-                      onChange={(e) => setAgent(kind, { windowHours: Math.max(1, Number(e.target.value)) })} />
+                    Session window (h)
+                    <input type="number" min={1} className="input mt-1" value={cfg.sessionWindowHours}
+                      onChange={(e) => setAgent(kind, { sessionWindowHours: Math.max(1, Number(e.target.value)) })} />
+                  </label>
+                  <div />
+                  <label className="text-xs text-neutral-400">
+                    Weekly limit ($)
+                    <input type="number" min={0} step="1" className="input mt-1" placeholder="none"
+                      value={cfg.limits.weeklyCostUsd ?? ""}
+                      onChange={(e) => setAgent(kind, { limits: { ...cfg.limits, weeklyCostUsd: e.target.value === "" ? null : Number(e.target.value) } })} />
+                  </label>
+                  <label className="text-xs text-neutral-400">
+                    Weekly window (h)
+                    <input type="number" min={1} className="input mt-1" value={cfg.weeklyWindowHours}
+                      onChange={(e) => setAgent(kind, { weeklyWindowHours: Math.max(1, Number(e.target.value)) })} />
                   </label>
                 </div>
               </div>
