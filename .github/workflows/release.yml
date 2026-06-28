@@ -22,16 +22,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  version:
+  # Skip releases until update-signing is configured, so the workflow stays green
+  # before setup instead of failing. See docs/RELEASING.md.
+  guard:
     runs-on: ubuntu-latest
     outputs:
+      signing: ${{ steps.c.outputs.signing }}
       version: ${{ steps.v.outputs.version }}
     steps:
+      - id: c
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then echo "signing=true" >> "$GITHUB_OUTPUT"; else echo "signing=false" >> "$GITHUB_OUTPUT"; echo "::notice::Skipping release — set TAURI_SIGNING_PRIVATE_KEY to enable (see docs/RELEASING.md)."; fi
       - id: v
         run: echo "version=0.1.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
   release:
-    needs: version
+    needs: guard
+    if: needs.guard.outputs.signing == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +64,7 @@ jobs:
       - name: Stamp version
         shell: bash
         run: |
-          V="${{ needs.version.outputs.version }}"
+          V="${{ needs.guard.outputs.version }}"
           node -e "for (const f of ['package.json','src-tauri/tauri.conf.json']) { const fs=require('fs'); const j=JSON.parse(fs.readFileSync(f)); j.version='${V}'; fs.writeFileSync(f, JSON.stringify(j,null,2)+'\n'); }"
           node -e "const fs=require('fs'); let s=fs.readFileSync('Cargo.toml','utf8'); s=s.replace(/^version = \".*\"/m, 'version = \"${V}\"'); fs.writeFileSync('Cargo.toml', s);"
 
@@ -93,8 +102,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: app-v${{ needs.version.outputs.version }}
-          releaseName: "Claude Orchestrator v${{ needs.version.outputs.version }}"
+          tagName: app-v${{ needs.guard.outputs.version }}
+          releaseName: "Claude Orchestrator v${{ needs.guard.outputs.version }}"
           releaseBody: "Automated release. Download the installer for your platform below. The desktop app auto-updates from this release channel."
           releaseDraft: false
           prerelease: false
