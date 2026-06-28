@@ -152,6 +152,26 @@ pub fn next_run_after(
     }
 }
 
+/// Generate up to `n` successive fire times for a schedule, starting at and
+/// including `seed`. Stops early if the schedule yields no further occurrence.
+pub fn occurrences(
+    schedule_kind: &str,
+    schedule: &str,
+    seed: DateTime<Utc>,
+    n: usize,
+) -> Vec<DateTime<Utc>> {
+    let mut out = Vec::new();
+    let mut t = seed;
+    for _ in 0..n {
+        out.push(t);
+        match next_run_after(schedule_kind, schedule, t) {
+            Some(next) if next > t => t = next,
+            _ => break,
+        }
+    }
+    out
+}
+
 /// Build a `ScheduledTask` from a markdown file's contents. Always returns a
 /// task; on parse failure `valid` is false and `error` is set.
 pub fn parse_scheduled(
@@ -326,6 +346,23 @@ mod tests {
         );
         assert!(!st.valid);
         assert!(st.error.is_some());
+    }
+
+    #[test]
+    fn occurrences_for_interval_and_cron() {
+        let seed = "2026-06-28T08:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let interval = occurrences("interval", "30m", seed, 3);
+        assert_eq!(interval.len(), 3);
+        assert_eq!(interval[0], seed);
+        assert_eq!(interval[1], seed + Duration::minutes(30));
+        assert_eq!(interval[2], seed + Duration::minutes(60));
+
+        // Seeded at a real fire time; occurrences includes the seed, then steps.
+        let cron_seed = "2026-06-28T09:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let cron = occurrences("cron", "0 9 * * *", cron_seed, 2);
+        assert_eq!(cron.len(), 2);
+        assert_eq!(cron[0].to_rfc3339(), "2026-06-28T09:00:00+00:00");
+        assert_eq!(cron[1].to_rfc3339(), "2026-06-29T09:00:00+00:00");
     }
 
     #[test]

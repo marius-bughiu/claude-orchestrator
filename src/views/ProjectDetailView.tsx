@@ -9,6 +9,7 @@ import * as api from "../api";
 import type { Project, Session } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
 import { CreateTaskModal } from "../components/CreateTaskModal";
+import { UpcomingTasks } from "../components/UpcomingTasks";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
 import { formatCost, formatRelative } from "../lib/format";
 
@@ -219,6 +220,8 @@ export function ProjectDetailView() {
       {notice && <div className="mb-4 rounded-md border border-indigo-500/30 bg-indigo-600/10 px-3 py-2 text-xs text-indigo-200">{notice}</div>}
 
       <div className="mb-5"><ProjectSettings project={project} /></div>
+
+      <UpcomingTasks projectId={project.id} />
 
       <h3 className="mb-2 text-sm font-semibold text-neutral-200">Tasks ({projectTasks.length})</h3>
       <div className="mb-6"><TaskTable tasks={projectTasks} /></div>

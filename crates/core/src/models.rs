@@ -419,3 +419,17 @@ pub struct ScheduledTask {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+/// A projected future firing of a scheduled task, for the "Upcoming" lists.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpcomingTask {
+    pub scheduled_id: String,
+    pub project_id: String,
+    pub project_name: String,
+    pub title: String,
+    pub agent: Option<AgentKind>,
+    pub priority: i64,
+    pub schedule_desc: String,
+    pub run_at: DateTime<Utc>,
+}

@@ -217,3 +217,15 @@ pub fn set_scheduled_enabled(state: State<AppState>, id: String, enabled: bool) 
     state.engine.request_tick();
     Ok(())
 }
+
+#[tauri::command]
+pub fn upcoming_tasks(
+    state: State<AppState>,
+    project_id: Option<String>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<UpcomingTask>> {
+    state
+        .engine
+        .upcoming(project_id.as_deref(), limit.unwrap_or(10) as usize)
+        .map_err(err)
+}

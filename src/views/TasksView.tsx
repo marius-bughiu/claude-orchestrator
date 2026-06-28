@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import type { TaskStatus } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
 import { CreateTaskModal } from "../components/CreateTaskModal";
+import { UpcomingTasks } from "../components/UpcomingTasks";
 import { EmptyState } from "../components/Modal";
 
 const STATUS_FILTERS: { label: string; value: TaskStatus | "all" | "active" }[] = [
@@ -77,7 +78,13 @@ export function TasksView() {
       {projects.length === 0 ? (
         <EmptyState title="No projects" hint="Add a project before creating tasks." />
       ) : (
-        <TaskTable tasks={filtered} showProject />
+        <>
+          <UpcomingTasks
+            projectId={projectFilter === "all" ? undefined : projectFilter}
+            showProject={projectFilter === "all"}
+          />
+          <TaskTable tasks={filtered} showProject />
+        </>
       )}
 
       {creating && <CreateTaskModal onClose={() => setCreating(false)} />}

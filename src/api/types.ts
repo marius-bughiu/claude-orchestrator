@@ -184,6 +184,17 @@ export interface ScheduledTask {
   updatedAt: string;
 }
 
+export interface UpcomingTask {
+  scheduledId: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  agent: AgentKind | null;
+  priority: number;
+  scheduleDesc: string;
+  runAt: string;
+}
+
 // Inputs
 export interface AddProjectInput {
   path: string;

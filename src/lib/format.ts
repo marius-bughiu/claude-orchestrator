@@ -79,6 +79,31 @@ export const SESSION_STATUS_META: Record<
   timed_out: { label: "Timed out", cls: "border-orange-500/40 bg-orange-500/10 text-orange-300" },
 };
 
+export function formatClock(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export function formatUntil(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diff = then - Date.now();
+  if (diff <= 0) return "due";
+  const m = Math.round(diff / 60000);
+  if (m < 60) return `in ${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `in ${h}h`;
+  return `in ${Math.round(h / 24)}d`;
+}
+
 export function priorityLabel(priority: number): string {
   if (priority >= 200) return "Urgent";
   if (priority >= 100) return "High";

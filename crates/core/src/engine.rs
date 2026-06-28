@@ -308,6 +308,56 @@ impl Engine {
         Ok(n)
     }
 
+    /// The soonest `limit` future firings projected from enabled, valid scheduled
+    /// tasks. Optionally scoped to one project. A frequent job contributes several
+    /// occurrences; results are merged and sorted by time.
+    pub fn upcoming(&self, project_id: Option<&str>, limit: usize) -> Result<Vec<UpcomingTask>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let now = Utc::now();
+        let scheduled = self.db.list_scheduled(project_id)?;
+        let projects = self.db.list_projects()?;
+        let name_of = |id: &str| {
+            projects
+                .iter()
+                .find(|p| p.id == id)
+                .map(|p| p.name.clone())
+                .unwrap_or_default()
+        };
+
+        let mut all = Vec::new();
+        for st in scheduled.iter().filter(|s| s.enabled && s.valid) {
+            // Seed from the stored next run if it's still in the future, else
+            // recompute from now.
+            let seed = st
+                .next_run
+                .filter(|t| *t > now)
+                .or_else(|| scheduled::next_run_after(&st.schedule_kind, &st.schedule, now));
+            let Some(seed) = seed else {
+                continue;
+            };
+            for run_at in scheduled::occurrences(&st.schedule_kind, &st.schedule, seed, limit) {
+                if run_at <= now {
+                    continue;
+                }
+                all.push(UpcomingTask {
+                    scheduled_id: st.id.clone(),
+                    project_id: st.project_id.clone(),
+                    project_name: name_of(&st.project_id),
+                    title: st.title.clone(),
+                    agent: st.agent,
+                    priority: st.priority,
+                    schedule_desc: st.schedule_desc.clone(),
+                    run_at,
+                });
+            }
+        }
+        all.sort_by_key(|u| u.run_at);
+        all.truncate(limit);
+        Ok(all)
+    }
+
     fn discover_scheduled_for_project(&self, project: &Project) -> Result<usize> {
         let dir = Path::new(&project.path).join(scheduled::SCHEDULED_DIR);
         let now = Utc::now();
@@ -1052,6 +1102,38 @@ mod tests {
         assert!(after.next_run.unwrap() > Utc::now());
         assert_eq!(eng.fire_due_scheduled().unwrap(), 0);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn upcoming_projects_future_firings_sorted() {
+        let eng = engine();
+        let dir = std::env::temp_dir().join(format!("orch-up-{}", Uuid::new_v4()));
+        let sdir = dir.join(".orchestrator/scheduled");
+        std::fs::create_dir_all(&sdir).unwrap();
+        // A frequent interval job and a disabled one (should be excluded).
+        std::fs::write(
+            sdir.join("often.md"),
+            "---\nevery: 15m\ntitle: Often\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(
+            sdir.join("off.md"),
+            "---\nevery: 5m\nenabled: false\ntitle: Off\n---\nbody",
+        )
+        .unwrap();
+        mk_project(&eng, &dir.to_string_lossy(), vec![AgentKind::Claude]);
+        eng.discover_all_scheduled().unwrap();
+
+        let up = eng.upcoming(None, 10).unwrap();
+        assert_eq!(up.len(), 10); // the 15m job alone fills 10 slots
+        assert!(up.iter().all(|u| u.title == "Often"));
+        // Sorted ascending and all in the future.
+        let now = Utc::now();
+        for w in up.windows(2) {
+            assert!(w[0].run_at <= w[1].run_at);
+        }
+        assert!(up.iter().all(|u| u.run_at > now));
         std::fs::remove_dir_all(&dir).ok();
     }
 

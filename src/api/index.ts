@@ -9,6 +9,7 @@ import type {
   OrchestratorStatus,
   Project,
   ScheduledTask,
+  UpcomingTask,
   Session,
   SessionEvent,
   Settings,
@@ -72,6 +73,11 @@ export const listScheduled = (projectId?: string) =>
 export const refreshScheduled = () => invoke<number>("refresh_scheduled");
 export const setScheduledEnabled = (id: string, enabled: boolean) =>
   invoke<void>("set_scheduled_enabled", { id, enabled });
+export const upcomingTasks = (projectId?: string, limit?: number) =>
+  invoke<UpcomingTask[]>("upcoming_tasks", {
+    projectId: projectId ?? null,
+    limit: limit ?? null,
+  });
 
 // ---- Events ----------------------------------------------------------------
 export function onOrchestratorEvent(

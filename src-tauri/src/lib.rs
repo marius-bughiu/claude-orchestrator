@@ -83,6 +83,7 @@ pub fn run() {
             commands::list_scheduled,
             commands::refresh_scheduled,
             commands::set_scheduled_enabled,
+            commands::upcoming_tasks,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Claude Orchestrator");
