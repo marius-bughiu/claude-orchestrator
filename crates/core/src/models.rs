@@ -1,0 +1,339 @@
+//! Core data model shared across the orchestrator.
+//!
+//! Every struct here is serialized to the frontend (camelCase JSON) and persisted
+//! to SQLite. Keep these definitions free of any GUI/Tauri concerns.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// Which CLI agent executes a piece of work. Claude is the orchestrator and the
+/// default executor; Gemini and Codex are sub-agents work can be delegated to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentKind {
+    Claude,
+    Gemini,
+    Codex,
+}
+
+impl AgentKind {
+    pub const ALL: [AgentKind; 3] = [AgentKind::Claude, AgentKind::Gemini, AgentKind::Codex];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentKind::Claude => "claude",
+            AgentKind::Gemini => "gemini",
+            AgentKind::Codex => "codex",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<AgentKind> {
+        match s.to_ascii_lowercase().as_str() {
+            "claude" => Some(AgentKind::Claude),
+            "gemini" => Some(AgentKind::Gemini),
+            "codex" => Some(AgentKind::Codex),
+            _ => None,
+        }
+    }
+}
+
+/// Lifecycle of a task as it moves through the scheduler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    /// Newly created, eligible to be scheduled.
+    Pending,
+    /// Picked up by the scheduler, a session is starting.
+    Queued,
+    /// A session is actively executing this task.
+    Running,
+    /// Session finished but the verifier judged the goal incomplete; will be retried.
+    NeedsReview,
+    /// Verified complete.
+    Completed,
+    /// Exhausted retries or the agent reported an unrecoverable error.
+    Failed,
+    /// Manually cancelled.
+    Cancelled,
+    /// Waiting on a dependency (`depends_on`).
+    Blocked,
+}
+
+impl TaskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskStatus::Pending => "pending",
+            TaskStatus::Queued => "queued",
+            TaskStatus::Running => "running",
+            TaskStatus::NeedsReview => "needs_review",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+            TaskStatus::Blocked => "blocked",
+        }
+    }
+
+    pub fn from_str(s: &str) -> TaskStatus {
+        match s {
+            "queued" => TaskStatus::Queued,
+            "running" => TaskStatus::Running,
+            "needs_review" => TaskStatus::NeedsReview,
+            "completed" => TaskStatus::Completed,
+            "failed" => TaskStatus::Failed,
+            "cancelled" => TaskStatus::Cancelled,
+            "blocked" => TaskStatus::Blocked,
+            _ => TaskStatus::Pending,
+        }
+    }
+
+    /// Terminal states are never rescheduled.
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, TaskStatus::Completed | TaskStatus::Cancelled)
+    }
+
+    /// States the scheduler may pick up and (re)run.
+    pub fn is_schedulable(&self) -> bool {
+        matches!(self, TaskStatus::Pending | TaskStatus::NeedsReview)
+    }
+}
+
+/// What a session was spawned to do. Drives which convention file / system prompt
+/// is used and how the result is interpreted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionKind {
+    /// Execute a task.
+    Task,
+    /// Generate new tasks for a project whose queue is empty (`roadmap.md`).
+    Roadmap,
+    /// Judge whether a finished task actually met its goal (`verify.md`).
+    Verify,
+}
+
+impl SessionKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SessionKind::Task => "task",
+            SessionKind::Roadmap => "roadmap",
+            SessionKind::Verify => "verify",
+        }
+    }
+    pub fn from_str(s: &str) -> SessionKind {
+        match s {
+            "roadmap" => SessionKind::Roadmap,
+            "verify" => SessionKind::Verify,
+            _ => SessionKind::Task,
+        }
+    }
+}
+
+/// Lifecycle of a single agent session (one CLI invocation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+    TimedOut,
+}
+
+impl SessionStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SessionStatus::Pending => "pending",
+            SessionStatus::Running => "running",
+            SessionStatus::Completed => "completed",
+            SessionStatus::Failed => "failed",
+            SessionStatus::Cancelled => "cancelled",
+            SessionStatus::TimedOut => "timed_out",
+        }
+    }
+    pub fn from_str(s: &str) -> SessionStatus {
+        match s {
+            "running" => SessionStatus::Running,
+            "completed" => SessionStatus::Completed,
+            "failed" => SessionStatus::Failed,
+            "cancelled" => SessionStatus::Cancelled,
+            "timed_out" => SessionStatus::TimedOut,
+            _ => SessionStatus::Pending,
+        }
+    }
+    pub fn is_active(&self) -> bool {
+        matches!(self, SessionStatus::Pending | SessionStatus::Running)
+    }
+}
+
+/// A local git repository the orchestrator manages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    /// Absolute path to the local git repo.
+    pub path: String,
+    pub description: Option<String>,
+    /// When false the scheduler ignores this project entirely.
+    pub enabled: bool,
+    /// Default agent for tasks in this project that don't specify one.
+    pub default_agent: AgentKind,
+    /// Per-project cap on concurrent sessions (None = use global setting).
+    pub max_concurrent: Option<u32>,
+    /// Whether the roadmap loop may auto-generate tasks when the queue empties.
+    pub roadmap_enabled: bool,
+    /// Whether finished tasks are auto-verified by a verifier session.
+    pub verify_enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A unit of work for a project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub id: String,
+    pub project_id: String,
+    pub title: String,
+    /// The prompt / instructions handed to the agent.
+    pub description: String,
+    pub status: TaskStatus,
+    /// Higher runs first. Convention: 0 low, 50 normal, 100 high, 200 urgent.
+    pub priority: i64,
+    pub agent: AgentKind,
+    /// Task that spawned this one (roadmap loop, decomposition).
+    pub parent_id: Option<String>,
+    /// Task ids that must be Completed before this is schedulable.
+    pub depends_on: Vec<String>,
+    /// How many sessions have run for this task.
+    pub attempts: u32,
+    /// Hard cap on attempts before the task is Failed.
+    pub max_attempts: u32,
+    /// Free-form labels for filtering.
+    pub tags: Vec<String>,
+    /// Set by the roadmap loop so generated tasks are distinguishable.
+    pub auto_generated: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Aggregated token/cost usage for a single session or rolled up across many.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub total_cost_usd: f64,
+    pub num_turns: u32,
+}
+
+impl TokenUsage {
+    pub fn add(&mut self, other: &TokenUsage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_read_tokens += other.cache_read_tokens;
+        self.cache_creation_tokens += other.cache_creation_tokens;
+        self.total_cost_usd += other.total_cost_usd;
+        self.num_turns += other.num_turns;
+    }
+}
+
+/// One CLI invocation against an agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub id: String,
+    pub task_id: Option<String>,
+    pub project_id: String,
+    pub agent: AgentKind,
+    pub kind: SessionKind,
+    pub status: SessionStatus,
+    /// The agent's own session id (e.g. Claude's `session_id`) for resuming.
+    pub agent_session_id: Option<String>,
+    pub model: Option<String>,
+    /// The prompt this session was launched with.
+    pub prompt: String,
+    /// Final assistant text / result summary.
+    pub result_text: Option<String>,
+    pub error: Option<String>,
+    pub exit_code: Option<i32>,
+    pub usage: TokenUsage,
+    pub started_at: Option<DateTime<Utc>>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A persisted streaming event from a session (normalized from the agent's
+/// stream-json output). The raw line is kept for fidelity/debugging.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionEvent {
+    pub id: i64,
+    pub session_id: String,
+    /// Normalized event kind: "init" | "assistant" | "thinking" | "tool_use"
+    /// | "tool_result" | "result" | "error" | "raw".
+    pub kind: String,
+    /// Human-readable text content (assistant text, tool name, error message…).
+    pub text: Option<String>,
+    /// Structured payload (tool input, usage, etc.).
+    pub data: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Per-agent usage rollup with optional configured limits, surfaced in the top bar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentUsage {
+    pub agent: AgentKind,
+    pub available: bool,
+    /// Usage accumulated within the current rolling window.
+    pub window: TokenUsage,
+    /// Usage since the app started tracking (all time).
+    pub total: TokenUsage,
+    pub active_sessions: u32,
+    /// User-configured limits for display (e.g. plan cost cap per window).
+    pub limits: AgentLimits,
+    /// Start of the current rolling window.
+    pub window_started_at: DateTime<Utc>,
+    pub window_hours: u32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentLimits {
+    /// Soft cost ceiling (USD) within the rolling window; None = untracked.
+    pub cost_limit_usd: Option<f64>,
+    /// Token ceiling within the rolling window; None = untracked.
+    pub token_limit: Option<u64>,
+}
+
+/// Snapshot of the whole orchestrator for the header / status views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrchestratorStatus {
+    pub running: bool,
+    pub active_sessions: u32,
+    pub max_concurrent: u32,
+    pub pending_tasks: u32,
+    pub projects: u32,
+    pub agents: Vec<AgentUsage>,
+}
+
+/// A single entry in the timeline view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineItem {
+    pub session_id: String,
+    pub task_id: Option<String>,
+    pub task_title: Option<String>,
+    pub project_id: String,
+    pub project_name: String,
+    pub agent: AgentKind,
+    pub kind: SessionKind,
+    pub status: SessionStatus,
+    pub started_at: Option<DateTime<Utc>>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub cost_usd: f64,
+}

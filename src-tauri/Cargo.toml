@@ -1,0 +1,37 @@
+[package]
+name = "claude-orchestrator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Cross-platform desktop app that orchestrates autonomous coding agents (Claude Code, Gemini, Codex) across multiple local git repositories."
+default-run = "claude-orchestrator"
+
+[lib]
+name = "claude_orchestrator_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "claude-orchestrator"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+orchestrator-core = { path = "../crates/core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+chrono.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+directories = "5"
+
+[features]
+# Default Tauri custom-protocol for production builds.
+custom-protocol = ["tauri/custom-protocol"]

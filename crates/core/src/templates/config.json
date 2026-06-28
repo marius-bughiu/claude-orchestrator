@@ -1,0 +1,9 @@
+{
+  "$schema": "https://github.com/marius-bughiu/claude-orchestrator/blob/main/docs/schema/project-config.json",
+  "version": 1,
+  "defaultAgent": "claude",
+  "maxConcurrent": null,
+  "roadmapEnabled": true,
+  "verifyEnabled": true,
+  "tags": []
+}
