@@ -27,6 +27,16 @@ export interface ActivityItem {
 
 let activitySeq = 1;
 
+/// True if the current local hour falls inside the quiet-hours window (which may
+/// wrap past midnight, e.g. 22 → 8). Used to suppress desktop notifications.
+function inQuietHours(settings: Settings | null): boolean {
+  if (!settings?.quietHoursEnabled) return false;
+  const { quietHoursStart: start, quietHoursEnd: end } = settings;
+  if (start === end) return false;
+  const h = new Date().getHours();
+  return start < end ? h >= start && h < end : h >= start || h < end;
+}
+
 interface StoreState {
   initialized: boolean;
   connected: boolean;
@@ -136,7 +146,7 @@ export const useStore = create<StoreState>((set, get) => ({
         // activity feed is fed by the separate `activity` event.
         const t = event.task;
         const becameDone = (t.status === "completed" || t.status === "failed") && prev?.status !== t.status;
-        if (becameDone && get().settings?.notificationsEnabled !== false) {
+        if (becameDone && get().settings?.notificationsEnabled !== false && !inQuietHours(get().settings)) {
           notify(t.status === "completed" ? "Task completed" : "Task failed", t.title);
         }
         break;

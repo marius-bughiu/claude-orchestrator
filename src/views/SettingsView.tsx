@@ -191,6 +191,23 @@ export function SettingsView() {
             <input type="checkbox" checked={draft.notificationsEnabled} onChange={(e) => set({ notificationsEnabled: e.target.checked })} />
             Desktop notifications
           </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-300">
+            <input type="checkbox" checked={draft.quietHoursEnabled} onChange={(e) => set({ quietHoursEnabled: e.target.checked })} />
+            Quiet hours
+          </label>
+          {draft.quietHoursEnabled && (
+            <div className="flex items-center gap-2 pl-6 text-sm text-neutral-400">
+              <span>From</span>
+              <select className="input !w-auto !py-1" value={draft.quietHoursStart} onChange={(e) => set({ quietHoursStart: Number(e.target.value) })}>
+                {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+              </select>
+              <span>to</span>
+              <select className="input !w-auto !py-1" value={draft.quietHoursEnd} onChange={(e) => set({ quietHoursEnd: Number(e.target.value) })}>
+                {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+              </select>
+              <span className="text-[11px] text-neutral-500">desktop notifications muted in this window (local time)</span>
+            </div>
+          )}
         </div>
       </section>
 

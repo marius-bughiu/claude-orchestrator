@@ -116,6 +116,9 @@ fn default_activity_retention() -> u32 {
 fn default_backup_interval_hours() -> u64 {
     24
 }
+fn default_quiet_hours_end() -> u8 {
+    8
+}
 
 /// Global orchestrator settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,6 +184,16 @@ pub struct Settings {
     /// being buried forever behind a stream of higher-priority work.
     #[serde(default)]
     pub priority_aging_per_hour: f64,
+    /// When true, desktop notifications are suppressed during the quiet-hours
+    /// window (local time), so unattended overnight runs don't ping the user.
+    #[serde(default)]
+    pub quiet_hours_enabled: bool,
+    /// Quiet-hours window start/end as local hours [0, 23]. The window wraps past
+    /// midnight when start > end (e.g. 22 → 8).
+    #[serde(default)]
+    pub quiet_hours_start: u8,
+    #[serde(default = "default_quiet_hours_end")]
+    pub quiet_hours_end: u8,
     /// When true, the config (settings + projects) is auto-exported on a cadence.
     #[serde(default)]
     pub backup_enabled: bool,
@@ -246,6 +259,9 @@ impl Default for Settings {
             retry_max_secs: 3600,
             activity_retention: 2000,
             priority_aging_per_hour: 0.0,
+            quiet_hours_enabled: false,
+            quiet_hours_start: 22,
+            quiet_hours_end: 8,
             backup_enabled: false,
             backup_interval_hours: 24,
             backup_dir: String::new(),

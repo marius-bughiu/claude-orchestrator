@@ -280,6 +280,16 @@ try {
     await seesText("a waiting task gains this much effective priority");
     assert.ok((await input.count()) > 0);
   });
+  await check("dashboard shows the cost forecast", async () => {
+    await goto("/#/dashboard");
+    await seesText("Cost forecast");
+    await seesText(/projected/);
+  });
+  await check("settings quiet-hours reveals a time window", async () => {
+    await goto("/#/settings");
+    await page.locator('label:has-text("Quiet hours") input[type="checkbox"]').check();
+    await seesText("desktop notifications muted in this window");
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

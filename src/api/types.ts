@@ -200,6 +200,9 @@ export interface Settings {
   retryMaxSecs: number;
   activityRetention: number;
   priorityAgingPerHour: number;
+  quietHoursEnabled: boolean;
+  quietHoursStart: number;
+  quietHoursEnd: number;
   backupEnabled: boolean;
   backupIntervalHours: number;
   backupDir: string;

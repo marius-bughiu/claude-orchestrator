@@ -12,6 +12,7 @@ import { AgentComparison } from "../components/AgentComparison";
 import { NeedsAttention } from "../components/NeedsAttention";
 import { NextUpQueue } from "../components/NextUpQueue";
 import { ThroughputChart } from "../components/ThroughputChart";
+import { CostForecast } from "../components/CostForecast";
 import { GettingStarted } from "../components/GettingStarted";
 import { LogConsole } from "../components/LogConsole";
 
@@ -162,6 +163,7 @@ export function DashboardView() {
       <NeedsAttention />
       <NextUpQueue />
       <ThroughputChart />
+      <CostForecast />
       <AgentComparison />
       <LogConsole />
 

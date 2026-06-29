@@ -15,7 +15,7 @@ use crate::scheduled;
 use crate::util;
 use crate::worktree;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -367,45 +367,70 @@ impl Engine {
 
         let active_sessions = self.db.active_sessions()?;
         let projects = self.db.list_projects()?;
+        let aging = settings.priority_aging_per_hour;
 
+        // --- Phase 1: fair task allocation. ---
+        // Collect each enabled project's startable tasks (capped by its own free
+        // slots), then hand out the free global slots round-robin so one busy
+        // project can't monopolize the fleet just because it sorts first.
+        let mut pools: HashMap<String, VecDeque<Task>> = HashMap::new();
         for project in projects.iter().filter(|p| p.enabled) {
             let proj_max = project.max_concurrent.unwrap_or(global_max).max(1);
-            loop {
-                if active >= global_max {
-                    return Ok(());
+            let proj_active = self.db.count_active_sessions_for_project(&project.id)?;
+            let free = proj_max.saturating_sub(proj_active) as usize;
+            if free == 0 {
+                continue;
+            }
+            let mut eligible = self.eligible_tasks(&project.id, aging)?;
+            eligible.truncate(free);
+            if !eligible.is_empty() {
+                pools.insert(project.id.clone(), eligible.into_iter().collect());
+            }
+        }
+        let caps: Vec<(String, u32)> = pools
+            .iter()
+            .map(|(id, q)| (id.clone(), q.len() as u32))
+            .collect();
+        let proj_by_id: HashMap<&str, &Project> =
+            projects.iter().map(|p| (p.id.as_str(), p)).collect();
+        for pid in round_robin_allocation(&caps, global_max.saturating_sub(active)) {
+            if active >= global_max {
+                break;
+            }
+            if let (Some(project), Some(queue)) =
+                (proj_by_id.get(pid.as_str()), pools.get_mut(&pid))
+            {
+                if let Some(task) = queue.pop_front() {
+                    self.start_task(project, task)?;
+                    active += 1;
                 }
-                let proj_active = self.db.count_active_sessions_for_project(&project.id)?;
-                if proj_active >= proj_max {
-                    break;
-                }
+            }
+        }
 
-                match self.pick_task(&project.id)? {
-                    Some(task) => {
-                        self.start_task(project, task)?;
-                        active += 1;
-                    }
-                    None => {
-                        // Tasks merely waiting out their retry backoff mean the
-                        // queue isn't empty — don't generate new roadmap work.
-                        if self.has_backing_off_tasks(&project.id)? {
-                            break;
-                        }
-                        // Queue is empty: run the roadmap loop if enabled and not
-                        // already running for this project.
-                        let roadmap_active = active_sessions
-                            .iter()
-                            .any(|s| s.project_id == project.id && s.kind == SessionKind::Roadmap);
-                        if settings.roadmap_enabled
-                            && project.roadmap_enabled
-                            && !roadmap_active
-                            && !self.has_running_roadmap(&project.id)?
-                        {
-                            self.spawn_roadmap_session(project)?;
-                            active += 1;
-                        }
-                        break;
-                    }
-                }
+        // --- Phase 2: roadmap loop for projects with a genuinely empty queue. ---
+        for project in projects.iter().filter(|p| p.enabled) {
+            if active >= global_max {
+                break;
+            }
+            if !settings.roadmap_enabled || !project.roadmap_enabled {
+                continue;
+            }
+            let proj_max = project.max_concurrent.unwrap_or(global_max).max(1);
+            if self.db.count_active_sessions_for_project(&project.id)? >= proj_max {
+                continue;
+            }
+            // Only when there is no schedulable work and nothing merely backing off.
+            if !self.eligible_tasks(&project.id, aging)?.is_empty()
+                || self.has_backing_off_tasks(&project.id)?
+            {
+                continue;
+            }
+            let roadmap_active = active_sessions
+                .iter()
+                .any(|s| s.project_id == project.id && s.kind == SessionKind::Roadmap);
+            if !roadmap_active && !self.has_running_roadmap(&project.id)? {
+                self.spawn_roadmap_session(project)?;
+                active += 1;
             }
         }
         Ok(())
@@ -600,13 +625,11 @@ impl Engine {
 
     /// Pick the highest-priority schedulable task whose dependencies are met,
     /// whose attempts are not exhausted, and whose retry backoff has elapsed.
-    fn pick_task(&self, project_id: &str) -> Result<Option<Task>> {
+    /// All schedulable tasks for a project whose attempts aren't exhausted, whose
+    /// retry backoff has elapsed, and whose dependencies are met — sorted best
+    /// first by effective (aged) priority.
+    fn eligible_tasks(&self, project_id: &str, aging: f64) -> Result<Vec<Task>> {
         let now = Utc::now();
-        let aging = self
-            .db
-            .get_settings()
-            .map(|s| s.priority_aging_per_hour)
-            .unwrap_or(0.0);
         let mut eligible: Vec<Task> = Vec::new();
         for task in self.db.schedulable_tasks(project_id)? {
             if task.attempts >= task.max_attempts {
@@ -626,7 +649,7 @@ impl Engine {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(a.created_at.cmp(&b.created_at))
         });
-        Ok(eligible.into_iter().next())
+        Ok(eligible)
     }
 
     /// True if a project has schedulable tasks that are only waiting out their
@@ -2095,6 +2118,29 @@ fn prune_backups(dir: &Path, keep: usize) {
     }
 }
 
+/// Round-robin slot allocation: given each project's available capacity and the
+/// number of free global slots, return the order in which projects should each
+/// start one task at a time. Slots are shared one-per-project-per-round so no
+/// single project drains the fleet just because it sorts first. Pure (no I/O)
+/// so the fairness policy is unit-testable.
+fn round_robin_allocation(caps: &[(String, u32)], global_slots: u32) -> Vec<String> {
+    let mut remaining: Vec<(String, u32)> = caps.iter().filter(|(_, c)| *c > 0).cloned().collect();
+    let mut out = Vec::new();
+    let mut slots = global_slots;
+    while slots > 0 && !remaining.is_empty() {
+        for (id, cap) in remaining.iter_mut() {
+            if slots == 0 {
+                break;
+            }
+            out.push(id.clone());
+            *cap -= 1;
+            slots -= 1;
+        }
+        remaining.retain(|(_, c)| *c > 0);
+    }
+    out
+}
+
 /// A task's effective scheduling priority: its base priority plus an
 /// anti-starvation bonus that grows with how long it has waited. With aging off
 /// (`aging_per_hour <= 0`) this is just the base priority.
@@ -2360,6 +2406,24 @@ mod tests {
     }
 
     #[test]
+    fn round_robin_shares_slots_fairly() {
+        // A has lots of work, B has one task; with 3 global slots, B must still
+        // get its turn instead of A taking everything.
+        let caps = vec![("a".to_string(), 5), ("b".to_string(), 1)];
+        let order = round_robin_allocation(&caps, 3);
+        assert_eq!(order, vec!["a", "b", "a"]);
+        assert_eq!(order.iter().filter(|x| *x == "b").count(), 1);
+
+        // Capacity is respected: never hand a project more than it can take.
+        let order = round_robin_allocation(&[("a".to_string(), 1), ("b".to_string(), 1)], 10);
+        assert_eq!(order, vec!["a", "b"]);
+
+        // Zero-capacity projects are skipped; zero slots yields nothing.
+        assert!(round_robin_allocation(&[("a".to_string(), 0)], 5).is_empty());
+        assert!(round_robin_allocation(&[("a".to_string(), 3)], 0).is_empty());
+    }
+
+    #[test]
     fn priority_aging_lets_old_low_priority_win() {
         let now = Utc::now();
         let mut high = mk_task("p", AgentKind::Claude, false);
@@ -2510,13 +2574,13 @@ mod tests {
         t.attempts = 1;
         t.retry_at = Some(Utc::now() + chrono::Duration::hours(1));
         eng.db.upsert_task(&t).unwrap();
-        // Backing off: not picked, and recognized as waiting (suppresses roadmap).
-        assert!(eng.pick_task(&p.id).unwrap().is_none());
+        // Backing off: not eligible, and recognized as waiting (suppresses roadmap).
+        assert!(eng.eligible_tasks(&p.id, 0.0).unwrap().is_empty());
         assert!(eng.has_backing_off_tasks(&p.id).unwrap());
         // Once due, it's eligible again.
         t.retry_at = Some(Utc::now() - chrono::Duration::minutes(1));
         eng.db.upsert_task(&t).unwrap();
-        assert!(eng.pick_task(&p.id).unwrap().is_some());
+        assert!(!eng.eligible_tasks(&p.id, 0.0).unwrap().is_empty());
         assert!(!eng.has_backing_off_tasks(&p.id).unwrap());
     }
 

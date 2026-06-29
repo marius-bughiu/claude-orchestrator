@@ -25,8 +25,8 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const usage = (i, o, cr, cost, turns) => ({ inputTokens: i, outputTokens: o, cacheReadTokens: cr, cacheCreationTokens: 0, totalCostUsd: cost, numTurns: turns });
-  const win = (u, hours, costLimit) => ({
-    usage: u, windowHours: hours, windowStartedAt: iso(-hours * 3.6e6),
+  const win = (u, hours, costLimit, elapsed = hours) => ({
+    usage: u, windowHours: hours, windowStartedAt: iso(-elapsed * 3.6e6),
     costLimitUsd: costLimit, tokenLimit: null,
     costPct: costLimit ? u.totalCostUsd / costLimit : null, tokenPct: null,
   });
@@ -34,9 +34,9 @@ window.__SHOT_MOCK__ = (() => {
     running: true, draining: false, activeSessions: 2, maxConcurrent: 3, pendingTasks: 5, projects: 3,
     agents: [
       { agent: "claude", available: true, activeSessions: 1,
-        session: win(usage(820000, 240000, 1900000, 4.21, 18), 5, 8), weekly: win(usage(5200000, 1400000, 9800000, 22.4, 96), 168, 50), total: usage(0,0,0,52.4,0) },
+        session: win(usage(820000, 240000, 1900000, 4.21, 18), 5, 8, 3), weekly: win(usage(5200000, 1400000, 9800000, 22.4, 96), 168, 50, 100), total: usage(0,0,0,52.4,0) },
       { agent: "gemini", available: true, activeSessions: 1,
-        session: win(usage(140000, 60000, 0, 0.83, 6), 5, null), weekly: win(usage(900000, 320000, 0, 4.6, 28), 168, null), total: usage(0,0,0,6.1,0) },
+        session: win(usage(140000, 60000, 0, 0.83, 6), 5, null, 3), weekly: win(usage(900000, 320000, 0, 4.6, 28), 168, null, 100), total: usage(0,0,0,6.1,0) },
       { agent: "codex", available: false, activeSessions: 0,
         session: win(usage(0,0,0,0,0), 5, null), weekly: win(usage(0,0,0,0,0), 168, null), total: usage(0,0,0,0,0) },
     ],
@@ -79,7 +79,7 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const settings = {
-    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, priorityAgingPerHour: 5, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
+    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, priorityAgingPerHour: 5, quietHoursEnabled: false, quietHoursStart: 22, quietHoursEnd: 8, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
     webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" }],
     taskTemplates: [{ id: "tpl1", name: "Bug fix", title: "Fix: ", description: "Reproduce, fix, and add a regression test.", agent: null, priority: 100, tags: ["bug"] }],
     agents: {
