@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS projects (
     max_concurrent   INTEGER,
     roadmap_enabled  INTEGER NOT NULL DEFAULT 1,
     verify_enabled   INTEGER NOT NULL DEFAULT 1,
+    default_max_attempts INTEGER,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL
 );

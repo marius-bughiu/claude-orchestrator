@@ -153,6 +153,20 @@ function ProjectSettings({ project }: { project: Project }) {
             }
           />
         </label>
+        <label className="flex items-center justify-between gap-2 text-sm text-neutral-300">
+          Max attempts / task
+          <input
+            type="number"
+            min={1}
+            className="input max-w-[100px]"
+            value={draft.defaultMaxAttempts ?? ""}
+            placeholder="3"
+            title="Attempt cap for new tasks in this project (blank = default 3)"
+            onChange={(e) =>
+              setDraft({ ...draft, defaultMaxAttempts: e.target.value === "" ? null : Math.max(1, Number(e.target.value)) })
+            }
+          />
+        </label>
       </div>
       <div className="mt-4 flex items-center gap-2">
         <button className="btn btn-primary" onClick={save} disabled={!dirty}>

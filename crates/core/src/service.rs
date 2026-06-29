@@ -92,6 +92,7 @@ pub fn add_project(db: &Db, input: AddProjectInput) -> Result<Project> {
         max_concurrent: None,
         roadmap_enabled: true,
         verify_enabled: true,
+        default_max_attempts: None,
         created_at: now,
         updated_at: now,
     };
@@ -122,6 +123,7 @@ pub fn create_task(db: &Db, input: CreateTaskInput) -> Result<Task> {
         }
     }
     let auto_agent = input.agent.is_none();
+    let default_attempts = project.effective_max_attempts();
     let now = Utc::now();
     let task = Task {
         id: Uuid::new_v4().to_string(),
@@ -136,7 +138,7 @@ pub fn create_task(db: &Db, input: CreateTaskInput) -> Result<Task> {
         parent_id: None,
         depends_on: input.depends_on,
         attempts: 0,
-        max_attempts: input.max_attempts.unwrap_or(3),
+        max_attempts: input.max_attempts.unwrap_or(default_attempts),
         tags: input.tags,
         auto_generated: false,
         retry_at: None,

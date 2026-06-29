@@ -14,6 +14,7 @@ fn project(id: &str) -> Project {
         max_concurrent: None,
         roadmap_enabled: true,
         verify_enabled: true,
+        default_max_attempts: None,
         created_at: now,
         updated_at: now,
     }
@@ -64,6 +65,18 @@ fn project_crud() {
     assert_eq!(db.get_project("p1").unwrap().name, "renamed");
     db.delete_project("p1").unwrap();
     assert_eq!(db.count_projects().unwrap(), 0);
+}
+
+#[test]
+fn project_default_max_attempts_roundtrips() {
+    let db = Db::open_in_memory().unwrap();
+    let mut p = project("p1");
+    assert_eq!(p.effective_max_attempts(), 3); // None -> default 3
+    p.default_max_attempts = Some(5);
+    db.upsert_project(&p).unwrap();
+    let loaded = db.get_project("p1").unwrap();
+    assert_eq!(loaded.default_max_attempts, Some(5));
+    assert_eq!(loaded.effective_max_attempts(), 5);
 }
 
 #[test]

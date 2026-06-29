@@ -202,11 +202,20 @@ pub struct Project {
     pub roadmap_enabled: bool,
     /// Whether finished tasks are auto-verified by a verifier session.
     pub verify_enabled: bool,
+    /// Default attempt cap for tasks created in this project (None = 3). Lower it
+    /// to give up sooner, raise it to retry more before failing.
+    #[serde(default)]
+    pub default_max_attempts: Option<u32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl Project {
+    /// The default attempt cap for new tasks in this project.
+    pub fn effective_max_attempts(&self) -> u32 {
+        self.default_max_attempts.unwrap_or(3).max(1)
+    }
+
     /// The agents this project may use, guaranteed non-empty and always
     /// including the default agent (falls back to `[default_agent]`).
     pub fn effective_allowed_agents(&self) -> Vec<AgentKind> {

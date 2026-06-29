@@ -16,6 +16,15 @@ const COLUMNS: { key: string; label: string; statuses: TaskStatus[]; accent: str
   { key: "failed", label: "Failed", statuses: ["failed", "cancelled"], accent: "border-t-rose-500" },
 ];
 
+/// Compact "time until" label for a future ISO timestamp.
+function untilLabel(iso: string): string {
+  const s = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
+}
+
 // When a card is dropped on a column, the task moves to this status.
 const DROP_STATUS: Record<string, TaskStatus> = {
   pending: "pending",
@@ -120,6 +129,9 @@ export function BoardView() {
                       <div className="flex flex-wrap items-center gap-1.5">
                         <AgentBadge agent={t.agent} />
                         <PriorityBadge priority={t.priority} />
+                        {t.retryAt && new Date(t.retryAt).getTime() > Date.now() && (
+                          <span className="text-[11px] text-amber-400" title="Waiting out retry backoff">retry in {untilLabel(t.retryAt)}</span>
+                        )}
                         {projectFilter === "all" && (
                           <span className="text-[11px] text-neutral-500">{projectName(t.projectId)}</span>
                         )}

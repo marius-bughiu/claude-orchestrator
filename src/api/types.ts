@@ -39,6 +39,7 @@ export interface Project {
   maxConcurrent: number | null;
   roadmapEnabled: boolean;
   verifyEnabled: boolean;
+  defaultMaxAttempts: number | null;
   createdAt: string;
   updatedAt: string;
 }

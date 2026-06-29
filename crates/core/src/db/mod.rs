@@ -25,6 +25,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE sessions ADD COLUMN branch TEXT",
     "ALTER TABLE sessions ADD COLUMN pr_url TEXT",
     "ALTER TABLE tasks ADD COLUMN retry_at TEXT",
+    "ALTER TABLE projects ADD COLUMN default_max_attempts INTEGER",
 ];
 
 fn run_migrations(conn: &Connection) {
@@ -117,14 +118,16 @@ impl Db {
         conn.execute(
             "INSERT INTO projects
                (id, name, path, description, enabled, default_agent, allowed_agents,
-                max_concurrent, roadmap_enabled, verify_enabled, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+                max_concurrent, roadmap_enabled, verify_enabled, default_max_attempts,
+                created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
              ON CONFLICT(id) DO UPDATE SET
                name=excluded.name, path=excluded.path, description=excluded.description,
                enabled=excluded.enabled, default_agent=excluded.default_agent,
                allowed_agents=excluded.allowed_agents,
                max_concurrent=excluded.max_concurrent, roadmap_enabled=excluded.roadmap_enabled,
-               verify_enabled=excluded.verify_enabled, updated_at=excluded.updated_at",
+               verify_enabled=excluded.verify_enabled,
+               default_max_attempts=excluded.default_max_attempts, updated_at=excluded.updated_at",
             params![
                 p.id,
                 p.name,
@@ -136,6 +139,7 @@ impl Db {
                 p.max_concurrent,
                 p.roadmap_enabled,
                 p.verify_enabled,
+                p.default_max_attempts,
                 p.created_at,
                 p.updated_at,
             ],
@@ -840,6 +844,7 @@ fn map_project(r: &Row) -> rusqlite::Result<Project> {
         max_concurrent: r.get("max_concurrent")?,
         roadmap_enabled: r.get("roadmap_enabled")?,
         verify_enabled: r.get("verify_enabled")?,
+        default_max_attempts: r.get("default_max_attempts")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
