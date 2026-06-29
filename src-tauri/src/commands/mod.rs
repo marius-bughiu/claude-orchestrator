@@ -2,7 +2,7 @@
 //! `invoke`. Each returns `Result<T, String>` so errors surface cleanly in JS.
 
 use crate::state::AppState;
-use orchestrator_core::config::Settings;
+use orchestrator_core::config::{Settings, WebhookConfig};
 use orchestrator_core::models::*;
 use orchestrator_core::service::{self, AddProjectInput, BulkTaskInput, CreateTaskInput};
 use orchestrator_core::{conventions, SessionEvent};
@@ -236,6 +236,11 @@ pub fn update_settings(state: State<AppState>, settings: Settings) -> CmdResult<
     state.engine.db().save_settings(&settings).map_err(err)?;
     state.engine.request_tick();
     Ok(())
+}
+
+#[tauri::command]
+pub fn test_webhook(state: State<AppState>, config: WebhookConfig) -> CmdResult<()> {
+    state.engine.test_webhook(&config).map_err(err)
 }
 
 #[tauri::command]

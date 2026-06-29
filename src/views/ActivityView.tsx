@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  CheckCircle2, XCircle, Clock, GitMerge, GitBranch, Github, Sparkles, Activity as ActivityIcon,
+  CheckCircle2, XCircle, Clock, GitMerge, GitBranch, Github, Sparkles, Activity as ActivityIcon, Download,
 } from "lucide-react";
 import * as api from "../api";
 import { useStore } from "../store";
@@ -67,6 +67,22 @@ export function ActivityView() {
   const target = (e: ActivityEntry) =>
     e.sessionId ? `/sessions/${e.sessionId}` : e.taskId ? `/tasks/${e.taskId}` : e.projectId ? `/projects/${e.projectId}` : null;
 
+  const download = (name: string, mime: string, content: string) => {
+    const url = URL.createObjectURL(new Blob([content], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const exportJson = () => download("activity.json", "application/json", JSON.stringify(entries, null, 2));
+  const exportCsv = () => {
+    const cols = ["createdAt", "kind", "level", "message", "projectName", "taskId", "sessionId"] as const;
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [cols.join(","), ...entries.map((e) => cols.map((c) => esc(e[c])).join(","))];
+    download("activity.csv", "text/csv", rows.join("\n"));
+  };
+
   return (
     <div className="p-6">
       <div className="mb-5 flex items-center justify-between">
@@ -74,10 +90,18 @@ export function ActivityView() {
           <h1 className="text-lg font-semibold text-neutral-100">Activity</h1>
           <p className="text-xs text-neutral-500">A persisted history of completions, failures, merges, and scheduled runs.</p>
         </div>
-        <select className="input max-w-[220px]" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
-          <option value="all">All projects</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <div className="flex items-center gap-2">
+          <button className="btn" onClick={exportCsv} disabled={entries.length === 0} title="Export as CSV">
+            <Download size={14} /> CSV
+          </button>
+          <button className="btn" onClick={exportJson} disabled={entries.length === 0} title="Export as JSON">
+            <Download size={14} /> JSON
+          </button>
+          <select className="input max-w-[220px]" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+            <option value="all">All projects</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
       </div>
 
       {entries.length === 0 ? (

@@ -30,6 +30,7 @@ export function SettingsView() {
   const [draft, setDraft] = useState<Settings | null>(storeSettings);
   const [saved, setSaved] = useState(false);
   const [health, setHealth] = useState<Record<string, { available: boolean; version: string | null }>>({});
+  const [tests, setTests] = useState<Record<string, { ok: boolean; msg: string } | "sending">>({});
 
   useEffect(() => {
     if (!storeSettings) refreshSettings();
@@ -207,6 +208,16 @@ export function SettingsView() {
                 set({ webhooks });
               };
               const removeHook = () => set({ webhooks: draft.webhooks.filter((_, j) => j !== i) });
+              const testHook = async () => {
+                setTests((t) => ({ ...t, [w.id]: "sending" }));
+                try {
+                  await api.testWebhook(w);
+                  setTests((t) => ({ ...t, [w.id]: { ok: true, msg: "Sent" } }));
+                } catch (e) {
+                  setTests((t) => ({ ...t, [w.id]: { ok: false, msg: String(e) } }));
+                }
+              };
+              const test = tests[w.id];
               return (
                 <div key={w.id} className="rounded-md border border-[var(--color-border)] p-3">
                   <div className="mb-2 flex items-center gap-2">
@@ -225,10 +236,18 @@ export function SettingsView() {
                       <input type="checkbox" checked={w.enabled} onChange={(e) => update({ enabled: e.target.checked })} />
                       Enabled
                     </label>
+                    <button className="btn !px-2 !py-1" onClick={testHook} disabled={!w.url || test === "sending"} title="Send a test notification">
+                      {test === "sending" ? "Testing…" : "Test"}
+                    </button>
                     <button className="btn btn-danger !px-2 !py-1" onClick={removeHook} title="Remove">
                       <AlertTriangle size={13} />
                     </button>
                   </div>
+                  {test && test !== "sending" && (
+                    <p className={`mb-2 text-[11px] ${test.ok ? "text-emerald-400" : "text-rose-400"}`}>
+                      {test.ok ? "✓ Test notification sent." : `✗ ${test.msg}`}
+                    </p>
+                  )}
                   <input
                     className="input mb-2 font-mono text-xs"
                     value={w.url}

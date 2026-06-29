@@ -25,6 +25,7 @@ import type {
   Settings,
   Task,
   TimelineItem,
+  WebhookConfig,
 } from "./types";
 
 export const EVENT_CHANNEL = "orchestrator://event";
@@ -85,6 +86,8 @@ export const setRunning = (running: boolean) =>
 export const getSettings = () => invoke<Settings>("get_settings");
 export const updateSettings = (settings: Settings) =>
   invoke<void>("update_settings", { settings });
+export const testWebhook = (config: WebhookConfig) =>
+  invoke<void>("test_webhook", { config });
 export const triggerRoadmap = (projectId: string) =>
   invoke<void>("trigger_roadmap", { projectId });
 export const getTimeline = (limit?: number) =>

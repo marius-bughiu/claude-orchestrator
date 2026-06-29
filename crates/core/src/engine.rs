@@ -1137,6 +1137,20 @@ impl Engine {
         self.db.list_activity(limit, project_id)
     }
 
+    /// Send a sample notification to a webhook to verify it is reachable. Runs
+    /// the delivery synchronously and surfaces any failure to the caller.
+    pub fn test_webhook(&self, cfg: &crate::config::WebhookConfig) -> Result<()> {
+        let mut n = crate::webhook::Notification::new(
+            "test",
+            "🔔 Test notification",
+            "This is a test from Claude Orchestrator.",
+        );
+        n.project = "example-project".into();
+        n.task = "Example task".into();
+        n.status = "completed".into();
+        crate::webhook::deliver(cfg, &n).map_err(CoreError::Other)
+    }
+
     /// Fire any configured webhooks that want this event for the given project.
     /// Best-effort, async, fire-and-forget (failures are logged).
     fn notify_webhooks(&self, project_id: &str, n: crate::webhook::Notification) {

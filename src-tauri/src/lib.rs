@@ -86,6 +86,7 @@ pub fn run() {
             commands::set_running,
             commands::get_settings,
             commands::update_settings,
+            commands::test_webhook,
             commands::trigger_roadmap,
             commands::get_timeline,
             commands::get_activity,
