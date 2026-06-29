@@ -11,6 +11,8 @@ import type {
   BranchInfo,
   Diagnostic,
   SessionMatch,
+  ThroughputPoint,
+  QueuedTask,
   ConfigBundle,
   ImportResult,
   RebaseResult,
@@ -163,6 +165,10 @@ export const exportTaskTranscript = (taskId: string) =>
   invoke<string>("export_task_transcript", { taskId });
 export const exportProjectTranscript = (projectId: string) =>
   invoke<string>("export_project_transcript", { projectId });
+export const upcomingQueue = (limit: number) =>
+  invoke<QueuedTask[]>("upcoming_queue", { limit });
+export const sessionThroughput = (days: number) =>
+  invoke<ThroughputPoint[]>("session_throughput", { days });
 export const listBranches = (projectId: string) =>
   invoke<BranchInfo[]>("list_branches", { projectId });
 export const deleteBranch = (projectId: string, branch: string) =>

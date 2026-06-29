@@ -602,8 +602,13 @@ impl Engine {
     /// whose attempts are not exhausted, and whose retry backoff has elapsed.
     fn pick_task(&self, project_id: &str) -> Result<Option<Task>> {
         let now = Utc::now();
-        let candidates = self.db.schedulable_tasks(project_id)?;
-        for task in candidates {
+        let aging = self
+            .db
+            .get_settings()
+            .map(|s| s.priority_aging_per_hour)
+            .unwrap_or(0.0);
+        let mut eligible: Vec<Task> = Vec::new();
+        for task in self.db.schedulable_tasks(project_id)? {
             if task.attempts >= task.max_attempts {
                 continue;
             }
@@ -611,10 +616,17 @@ impl Engine {
                 continue; // still backing off
             }
             if self.deps_satisfied(&task)? {
-                return Ok(Some(task));
+                eligible.push(task);
             }
         }
-        Ok(None)
+        // Highest effective (aged) priority wins; older task breaks ties.
+        eligible.sort_by(|a, b| {
+            effective_priority(b, now, aging)
+                .partial_cmp(&effective_priority(a, now, aging))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.created_at.cmp(&b.created_at))
+        });
+        Ok(eligible.into_iter().next())
     }
 
     /// True if a project has schedulable tasks that are only waiting out their
@@ -1078,6 +1090,49 @@ impl Engine {
         }
 
         Ok(out)
+    }
+
+    /// The next tasks the scheduler would run across all enabled projects,
+    /// ordered by effective (aged) priority — a preview of the live queue.
+    pub fn upcoming_queue(&self, limit: usize) -> Result<Vec<QueuedTask>> {
+        let now = Utc::now();
+        let aging = self.db.get_settings()?.priority_aging_per_hour;
+        let mut out: Vec<QueuedTask> = Vec::new();
+        for project in self.db.list_projects()? {
+            if !project.enabled {
+                continue;
+            }
+            for task in self.db.schedulable_tasks(&project.id)? {
+                if task.attempts >= task.max_attempts {
+                    continue;
+                }
+                if task.retry_at.map(|r| r > now).unwrap_or(false) {
+                    continue;
+                }
+                if !self.deps_satisfied(&task)? {
+                    continue;
+                }
+                let effective_priority = effective_priority(&task, now, aging);
+                out.push(QueuedTask {
+                    project_name: project.name.clone(),
+                    effective_priority,
+                    task,
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            b.effective_priority
+                .partial_cmp(&a.effective_priority)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.task.created_at.cmp(&b.task.created_at))
+        });
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    /// Sessions completed vs failed per day over the last `days` days.
+    pub fn session_throughput(&self, days: u32) -> Result<Vec<ThroughputPoint>> {
+        self.db.session_throughput(days)
     }
 
     /// Full-text search over session content (prompts, results, errors, and
@@ -2040,6 +2095,18 @@ fn prune_backups(dir: &Path, keep: usize) {
     }
 }
 
+/// A task's effective scheduling priority: its base priority plus an
+/// anti-starvation bonus that grows with how long it has waited. With aging off
+/// (`aging_per_hour <= 0`) this is just the base priority.
+fn effective_priority(task: &Task, now: DateTime<Utc>, aging_per_hour: f64) -> f64 {
+    let base = task.priority as f64;
+    if aging_per_hour <= 0.0 {
+        return base;
+    }
+    let waited_hours = (now - task.created_at).num_seconds().max(0) as f64 / 3600.0;
+    base + aging_per_hour * waited_hours
+}
+
 /// Build a one-line, ~160-char context snippet around the first case-insensitive
 /// occurrence of `needle` (already lowercased) in `text`. Returns None if absent.
 fn snippet_of(text: Option<&str>, needle: &str) -> Option<String> {
@@ -2290,6 +2357,41 @@ mod tests {
         assert_eq!(left[0].status, TaskStatus::Pending);
         // Empty status list is a no-op.
         assert_eq!(eng.db.purge_tasks(None, &[]).unwrap(), 0);
+    }
+
+    #[test]
+    fn priority_aging_lets_old_low_priority_win() {
+        let now = Utc::now();
+        let mut high = mk_task("p", AgentKind::Claude, false);
+        high.priority = 100;
+        high.created_at = now; // fresh
+        let mut low = mk_task("p", AgentKind::Claude, false);
+        low.priority = 50;
+        low.created_at = now - chrono::Duration::hours(40); // waited a long time
+
+        // Aging off: base priority decides — high wins.
+        assert!(effective_priority(&high, now, 0.0) > effective_priority(&low, now, 0.0));
+        // Aging at +2/hr: 50 + 2*40 = 130 > 100, so the aged low-priority task wins.
+        assert!(effective_priority(&low, now, 2.0) > effective_priority(&high, now, 2.0));
+    }
+
+    #[test]
+    fn upcoming_queue_orders_by_effective_priority() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let mut a = mk_task(&p.id, AgentKind::Claude, false);
+        a.title = "high".into();
+        a.priority = 100;
+        let mut b = mk_task(&p.id, AgentKind::Claude, false);
+        b.title = "low".into();
+        b.priority = 0;
+        eng.db.upsert_task(&a).unwrap();
+        eng.db.upsert_task(&b).unwrap();
+
+        let q = eng.upcoming_queue(10).unwrap();
+        assert_eq!(q.len(), 2);
+        assert_eq!(q[0].task.title, "high");
+        assert_eq!(q[0].project_name, "p");
     }
 
     #[test]

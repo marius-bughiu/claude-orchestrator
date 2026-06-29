@@ -454,6 +454,16 @@ pub fn search_sessions(
 }
 
 #[tauri::command]
+pub fn upcoming_queue(state: State<AppState>, limit: usize) -> CmdResult<Vec<QueuedTask>> {
+    state.engine.upcoming_queue(limit).map_err(err)
+}
+
+#[tauri::command]
+pub fn session_throughput(state: State<AppState>, days: u32) -> CmdResult<Vec<ThroughputPoint>> {
+    state.engine.session_throughput(days).map_err(err)
+}
+
+#[tauri::command]
 pub fn export_task_transcript(state: State<AppState>, task_id: String) -> CmdResult<String> {
     state.engine.export_task_transcript(&task_id).map_err(err)
 }

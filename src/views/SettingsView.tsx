@@ -224,6 +224,14 @@ export function SettingsView() {
             onChange={(e) => set({ activityRetention: Math.max(1, Number(e.target.value)) })} />
           <span className="mt-1 block text-[11px] text-neutral-500">Older activity entries are pruned beyond this count.</span>
         </label>
+        <label className="mt-4 block text-sm text-neutral-300">
+          <span className="mb-1 block text-xs text-neutral-400">Priority aging (per hour)</span>
+          <input type="number" min={0} step="1" className="input max-w-[200px]" value={draft.priorityAgingPerHour}
+            onChange={(e) => set({ priorityAgingPerHour: Math.max(0, Number(e.target.value)) })} />
+          <span className="mt-1 block text-[11px] text-neutral-500">
+            Anti-starvation: a waiting task gains this much effective priority each hour, so old low-priority work isn't buried forever. 0 disables aging.
+          </span>
+        </label>
       </section>
 
       <section className="card mb-5 p-4">

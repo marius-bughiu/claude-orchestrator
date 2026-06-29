@@ -496,6 +496,27 @@ pub struct AgentHealth {
     pub version: Option<String>,
 }
 
+/// Sessions that ended on a given day, split by terminal outcome. Used for the
+/// dashboard throughput chart.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThroughputPoint {
+    /// ISO date (YYYY-MM-DD).
+    pub date: String,
+    pub completed: u32,
+    pub failed: u32,
+}
+
+/// A task the scheduler would run next, with its resolved project name and the
+/// effective (aged) priority used to order it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedTask {
+    pub task: Task,
+    pub project_name: String,
+    pub effective_priority: f64,
+}
+
 /// A session matched by a full-text search, with a snippet of the matching text
 /// and where it was found (`result`, `prompt`, `error`, or `transcript`).
 #[derive(Debug, Clone, Serialize, Deserialize)]

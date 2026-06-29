@@ -111,6 +111,8 @@ pub fn run() {
             commands::agent_health,
             commands::diagnostics,
             commands::search_sessions,
+            commands::upcoming_queue,
+            commands::session_throughput,
             commands::export_task_transcript,
             commands::export_project_transcript,
             commands::list_branches,

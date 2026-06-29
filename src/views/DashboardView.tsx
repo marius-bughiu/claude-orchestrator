@@ -10,6 +10,8 @@ import { useStore } from "../store";
 import { formatCost, formatTokens, AGENT_LABELS } from "../lib/format";
 import { AgentComparison } from "../components/AgentComparison";
 import { NeedsAttention } from "../components/NeedsAttention";
+import { NextUpQueue } from "../components/NextUpQueue";
+import { ThroughputChart } from "../components/ThroughputChart";
 import { GettingStarted } from "../components/GettingStarted";
 import { LogConsole } from "../components/LogConsole";
 
@@ -158,6 +160,8 @@ export function DashboardView() {
 
       <GettingStarted />
       <NeedsAttention />
+      <NextUpQueue />
+      <ThroughputChart />
       <AgentComparison />
       <LogConsole />
 

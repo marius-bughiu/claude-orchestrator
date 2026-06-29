@@ -262,6 +262,24 @@ try {
     await page.getByRole("combobox").filter({ hasText: "Set priority…" }).waitFor({ state: "visible" });
     await page.getByPlaceholder("add tag…").waitFor({ state: "visible" });
   });
+  await check("dashboard shows the next-up queue", async () => {
+    await goto("/#/dashboard");
+    await seesText("Next up");
+    await seesText("what the scheduler will run next");
+  });
+  await check("dashboard shows the throughput chart", async () => {
+    await goto("/#/dashboard");
+    await seesText("Throughput");
+    await seesText(/% success/);
+  });
+  await check("settings exposes priority aging", async () => {
+    await goto("/#/settings");
+    await seesText("Priority aging (per hour)");
+    const input = page.locator('input[type="number"]');
+    // The aging field is present and editable somewhere in the scheduler section.
+    await seesText("a waiting task gains this much effective priority");
+    assert.ok((await input.count()) > 0);
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

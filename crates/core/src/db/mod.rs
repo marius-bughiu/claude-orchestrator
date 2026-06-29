@@ -375,6 +375,33 @@ impl Db {
         Ok(rows)
     }
 
+    /// Count sessions that ended in the last `days` days, grouped by day and split
+    /// into completed vs failed. Returns one point per day that had activity,
+    /// oldest first.
+    pub fn session_throughput(&self, days: u32) -> Result<Vec<ThroughputPoint>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT date(ended_at) AS d, \
+                    SUM(status = 'completed') AS completed, \
+                    SUM(status = 'failed') AS failed \
+             FROM sessions \
+             WHERE ended_at IS NOT NULL \
+               AND date(ended_at) >= date('now', ?1) \
+             GROUP BY d ORDER BY d ASC",
+        )?;
+        let offset = format!("-{} days", days.saturating_sub(1));
+        let rows = stmt
+            .query_map(params![offset], |r| {
+                Ok(ThroughputPoint {
+                    date: r.get("d")?,
+                    completed: r.get::<_, i64>("completed")? as u32,
+                    failed: r.get::<_, i64>("failed")? as u32,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn get_session(&self, id: &str) -> Result<Session> {
         let conn = self.lock();
         conn.query_row(

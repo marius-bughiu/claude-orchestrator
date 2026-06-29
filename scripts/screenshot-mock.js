@@ -79,7 +79,7 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const settings = {
-    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
+    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, priorityAgingPerHour: 5, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
     webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" }],
     taskTemplates: [{ id: "tpl1", name: "Bug fix", title: "Fix: ", description: "Reproduce, fix, and add a regression test.", agent: null, priority: 100, tags: ["bug"] }],
     agents: {
@@ -135,6 +135,20 @@ window.__TAURI_INTERNALS__ = {
         return Promise.resolve(args.projectId ? m.activity.filter((a) => a.projectId === args.projectId) : m.activity);
       case "create_tasks_bulk": return Promise.resolve([]);
       case "purge_tasks": return Promise.resolve(2);
+      case "upcoming_queue": return Promise.resolve([
+        { task: m.tasks[7], projectName: "claude-orchestrator", effectivePriority: 200 },
+        { task: m.tasks[1], projectName: "claude-orchestrator", effectivePriority: 95 },
+        { task: m.tasks[5], projectName: "claude-orchestrator", effectivePriority: 35 },
+      ].slice(0, args.limit ?? 8));
+      case "session_throughput": {
+        const days = args.days ?? 14;
+        const base = Date.now();
+        return Promise.resolve(Array.from({ length: days }, (_, i) => {
+          const d = new Date(base - (days - 1 - i) * 8.64e7).toISOString().slice(0, 10);
+          const completed = 2 + Math.round(5 * Math.abs(Math.sin(i * 0.9)));
+          return { date: d, completed, failed: i % 4 === 0 ? 1 : 0 };
+        }));
+      }
       case "task_rollup": return Promise.resolve({ sessions: 3, totalCostUsd: 0.74, totalTokens: 284000, totalDurationSecs: 312 });
       case "stuck_tasks": return Promise.resolve([
         { task: m.tasks[2], reason: "many_retries", detail: "2 of 3 attempts used" },

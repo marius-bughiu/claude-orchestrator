@@ -176,6 +176,11 @@ pub struct Settings {
     /// Maximum number of activity-log entries to retain; older ones are pruned.
     #[serde(default = "default_activity_retention")]
     pub activity_retention: u32,
+    /// Anti-starvation: how much a waiting task's effective scheduling priority
+    /// grows per hour it has waited (0 = off). Keeps low-priority tasks from
+    /// being buried forever behind a stream of higher-priority work.
+    #[serde(default)]
+    pub priority_aging_per_hour: f64,
     /// When true, the config (settings + projects) is auto-exported on a cadence.
     #[serde(default)]
     pub backup_enabled: bool,
@@ -240,6 +245,7 @@ impl Default for Settings {
             retry_base_secs: 60,
             retry_max_secs: 3600,
             activity_retention: 2000,
+            priority_aging_per_hour: 0.0,
             backup_enabled: false,
             backup_interval_hours: 24,
             backup_dir: String::new(),

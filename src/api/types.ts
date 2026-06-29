@@ -199,6 +199,7 @@ export interface Settings {
   retryBaseSecs: number;
   retryMaxSecs: number;
   activityRetention: number;
+  priorityAgingPerHour: number;
   backupEnabled: boolean;
   backupIntervalHours: number;
   backupDir: string;
@@ -316,6 +317,18 @@ export interface SessionMatch {
   taskTitle: string | null;
   snippet: string;
   matchedIn: string;
+}
+
+export interface ThroughputPoint {
+  date: string;
+  completed: number;
+  failed: number;
+}
+
+export interface QueuedTask {
+  task: Task;
+  projectName: string;
+  effectivePriority: number;
 }
 
 export interface StuckTask {
