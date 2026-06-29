@@ -206,6 +206,11 @@ pub struct Project {
     /// to give up sooner, raise it to retry more before failing.
     #[serde(default)]
     pub default_max_attempts: Option<u32>,
+    /// Path to an MCP config file passed to the agent (`--mcp-config`) for every
+    /// session in this project. Empty/None = no MCP servers. Only the Claude
+    /// adapter consumes it today.
+    #[serde(default)]
+    pub mcp_config: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -167,6 +167,20 @@ function ProjectSettings({ project }: { project: Project }) {
             }
           />
         </label>
+        <label className="col-span-2 flex flex-col gap-1 text-sm text-neutral-300">
+          <span className="flex items-center justify-between">
+            MCP config
+            <span className="text-[11px] text-neutral-500">path to an MCP server config (Claude)</span>
+          </span>
+          <input
+            type="text"
+            className="input"
+            value={draft.mcpConfig ?? ""}
+            placeholder="e.g. .mcp.json or /abs/path/mcp.json"
+            title="Passed to the agent as --mcp-config for every session in this project (blank = none)"
+            onChange={(e) => setDraft({ ...draft, mcpConfig: e.target.value === "" ? null : e.target.value })}
+          />
+        </label>
       </div>
       <div className="mt-4 flex items-center gap-2">
         <button className="btn btn-primary" onClick={save} disabled={!dirty}>

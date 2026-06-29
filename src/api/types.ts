@@ -40,6 +40,8 @@ export interface Project {
   roadmapEnabled: boolean;
   verifyEnabled: boolean;
   defaultMaxAttempts: number | null;
+  /** Path to an MCP config file passed to the agent for this project's sessions. */
+  mcpConfig: string | null;
   createdAt: string;
   updatedAt: string;
 }

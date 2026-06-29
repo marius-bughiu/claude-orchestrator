@@ -26,6 +26,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE sessions ADD COLUMN pr_url TEXT",
     "ALTER TABLE tasks ADD COLUMN retry_at TEXT",
     "ALTER TABLE projects ADD COLUMN default_max_attempts INTEGER",
+    "ALTER TABLE projects ADD COLUMN mcp_config TEXT",
 ];
 
 fn run_migrations(conn: &Connection) {
@@ -119,15 +120,16 @@ impl Db {
             "INSERT INTO projects
                (id, name, path, description, enabled, default_agent, allowed_agents,
                 max_concurrent, roadmap_enabled, verify_enabled, default_max_attempts,
-                created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
+                mcp_config, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)
              ON CONFLICT(id) DO UPDATE SET
                name=excluded.name, path=excluded.path, description=excluded.description,
                enabled=excluded.enabled, default_agent=excluded.default_agent,
                allowed_agents=excluded.allowed_agents,
                max_concurrent=excluded.max_concurrent, roadmap_enabled=excluded.roadmap_enabled,
                verify_enabled=excluded.verify_enabled,
-               default_max_attempts=excluded.default_max_attempts, updated_at=excluded.updated_at",
+               default_max_attempts=excluded.default_max_attempts,
+               mcp_config=excluded.mcp_config, updated_at=excluded.updated_at",
             params![
                 p.id,
                 p.name,
@@ -140,6 +142,7 @@ impl Db {
                 p.roadmap_enabled,
                 p.verify_enabled,
                 p.default_max_attempts,
+                p.mcp_config,
                 p.created_at,
                 p.updated_at,
             ],
@@ -959,6 +962,7 @@ fn map_project(r: &Row) -> rusqlite::Result<Project> {
         roadmap_enabled: r.get("roadmap_enabled")?,
         verify_enabled: r.get("verify_enabled")?,
         default_max_attempts: r.get("default_max_attempts")?,
+        mcp_config: r.get("mcp_config")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })

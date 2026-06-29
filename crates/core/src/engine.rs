@@ -752,6 +752,13 @@ impl Engine {
             .or_else(|| agent.default_model().map(String::from));
         spec.permission_mode = settings.permission_mode;
         spec.extra_args = cfg.extra_args.clone();
+        // Per-project MCP servers (passed to the agent's `--mcp-config`).
+        spec.mcp_config = project
+            .mcp_config
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from);
         spec
     }
 
@@ -1895,6 +1902,7 @@ mod tests {
             roadmap_enabled: false,
             verify_enabled: false,
             default_max_attempts: None,
+            mcp_config: None,
             created_at: now,
             updated_at: now,
         };
@@ -1924,6 +1932,26 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    #[test]
+    fn run_spec_carries_project_mcp_config() {
+        let eng = engine();
+        let mut p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        // No MCP config → None.
+        let spec = eng.run_spec(&p, AgentKind::Claude, "do it", None);
+        assert!(spec.mcp_config.is_none());
+        // A configured path flows through to the spec.
+        p.mcp_config = Some("/tmp/p/.mcp.json".into());
+        let spec = eng.run_spec(&p, AgentKind::Claude, "do it", None);
+        assert_eq!(
+            spec.mcp_config.as_deref(),
+            Some(Path::new("/tmp/p/.mcp.json"))
+        );
+        // Whitespace-only is treated as unset.
+        p.mcp_config = Some("   ".into());
+        let spec = eng.run_spec(&p, AgentKind::Claude, "do it", None);
+        assert!(spec.mcp_config.is_none());
     }
 
     #[test]

@@ -5,9 +5,9 @@ window.__SHOT_MOCK__ = (() => {
   const iso = (msFromNow) => new Date(now + msFromNow).toISOString();
 
   const projects = [
-    { id: "p1", name: "claude-orchestrator", path: "/home/user/claude-orchestrator", description: "Self-hosted orchestrator", enabled: true, defaultAgent: "claude", allowedAgents: ["claude", "gemini", "codex"], maxConcurrent: null, roadmapEnabled: true, verifyEnabled: true, defaultMaxAttempts: null, createdAt: iso(-8.64e7), updatedAt: iso(-3600e3) },
-    { id: "p2", name: "web-dashboard", path: "/home/user/projects/web-dashboard", description: null, enabled: true, defaultAgent: "claude", allowedAgents: ["claude", "gemini"], maxConcurrent: 2, roadmapEnabled: true, verifyEnabled: true, defaultMaxAttempts: null, createdAt: iso(-1.7e8), updatedAt: iso(-7200e3) },
-    { id: "p3", name: "api-gateway", path: "/home/user/projects/api-gateway", description: null, enabled: false, defaultAgent: "claude", allowedAgents: ["claude"], maxConcurrent: null, roadmapEnabled: false, verifyEnabled: true, defaultMaxAttempts: null, createdAt: iso(-2.6e8), updatedAt: iso(-2.6e8) },
+    { id: "p1", name: "claude-orchestrator", path: "/home/user/claude-orchestrator", description: "Self-hosted orchestrator", enabled: true, defaultAgent: "claude", allowedAgents: ["claude", "gemini", "codex"], maxConcurrent: null, roadmapEnabled: true, verifyEnabled: true, defaultMaxAttempts: null, mcpConfig: null, createdAt: iso(-8.64e7), updatedAt: iso(-3600e3) },
+    { id: "p2", name: "web-dashboard", path: "/home/user/projects/web-dashboard", description: null, enabled: true, defaultAgent: "claude", allowedAgents: ["claude", "gemini"], maxConcurrent: 2, roadmapEnabled: true, verifyEnabled: true, defaultMaxAttempts: null, mcpConfig: null, createdAt: iso(-1.7e8), updatedAt: iso(-7200e3) },
+    { id: "p3", name: "api-gateway", path: "/home/user/projects/api-gateway", description: null, enabled: false, defaultAgent: "claude", allowedAgents: ["claude"], maxConcurrent: null, roadmapEnabled: false, verifyEnabled: true, defaultMaxAttempts: null, mcpConfig: null, createdAt: iso(-2.6e8), updatedAt: iso(-2.6e8) },
   ];
 
   const mkTask = (id, projectId, title, status, priority, agent, opts = {}) => ({
@@ -110,6 +110,12 @@ window.__SHOT_MOCK__ = (() => {
 
   return { projects, tasks, status, timeline, scheduled, upcoming, settings, session, sessionEvents, daySeries, monthSeries, yearSeries, activity };
 })();
+
+// The event plugin unregisters listeners through this object on unmount; without
+// it, every route change throws during cleanup.
+window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+  unregisterListener() {},
+};
 
 window.__TAURI_INTERNALS__ = {
   transformCallback(cb) { const id = Math.floor(Math.random() * 1e9); window["_cb_" + id] = cb; return id; },

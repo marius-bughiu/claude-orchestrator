@@ -94,6 +94,7 @@ pub fn add_project(db: &Db, input: AddProjectInput) -> Result<Project> {
         roadmap_enabled: true,
         verify_enabled: true,
         default_max_attempts: None,
+        mcp_config: None,
         created_at: now,
         updated_at: now,
     };
