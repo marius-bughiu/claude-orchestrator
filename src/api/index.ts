@@ -105,6 +105,7 @@ export const stuckTasks = () => invoke<StuckTask[]>("stuck_tasks");
 export const exportConfig = () => invoke<ConfigBundle>("export_config");
 export const importConfig = (bundle: ConfigBundle) =>
   invoke<ImportResult>("import_config", { bundle });
+export const backupConfigNow = () => invoke<string>("backup_config_now");
 
 // ---- Scheduled tasks -------------------------------------------------------
 export const listScheduled = (projectId?: string) =>

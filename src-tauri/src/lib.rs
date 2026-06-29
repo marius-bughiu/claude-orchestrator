@@ -94,6 +94,7 @@ pub fn run() {
             commands::stuck_tasks,
             commands::export_config,
             commands::import_config,
+            commands::backup_config_now,
             commands::list_scheduled,
             commands::refresh_scheduled,
             commands::set_scheduled_enabled,

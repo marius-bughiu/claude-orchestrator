@@ -79,7 +79,7 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const settings = {
-    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000,
+    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
     webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" }],
     agents: {
       claude: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: 25, tokenLimit: null }, windowHours: 5, enabled: true },
@@ -134,6 +134,7 @@ window.__TAURI_INTERNALS__ = {
       ]);
       case "export_config": return Promise.resolve({ version: 1, settings: m.settings, projects: m.projects });
       case "import_config": return Promise.resolve({ projectsImported: 2, projectsSkipped: 0, settingsApplied: true });
+      case "backup_config_now": return Promise.resolve("/home/user/backups/orchestrator-config-20260629-141500.json");
       case "list_scheduled": return Promise.resolve(args.projectId ? m.scheduled.filter((s) => s.projectId === args.projectId) : m.scheduled);
       case "upcoming_tasks": return Promise.resolve(args.projectId ? m.upcoming.filter((u) => u.projectId === args.projectId) : m.upcoming);
       case "get_settings": return Promise.resolve(m.settings);

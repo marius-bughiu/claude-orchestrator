@@ -132,6 +132,27 @@ impl Engine {
                 tokio::time::sleep(Duration::from_secs(secs)).await;
             }
         });
+
+        // Config backup loop: write a backup every `backup_interval_hours` when
+        // enabled and a directory is configured.
+        let backupper = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let hours = backupper
+                    .db
+                    .get_settings()
+                    .map(|s| s.backup_interval_hours)
+                    .unwrap_or(24)
+                    .max(1);
+                tokio::time::sleep(Duration::from_secs(hours * 3600)).await;
+                let settings = backupper.db.get_settings().unwrap_or_default();
+                if settings.backup_enabled && !settings.backup_dir.trim().is_empty() {
+                    if let Err(e) = backupper.backup_now() {
+                        backupper.log("warn", format!("config backup failed: {e}"));
+                    }
+                }
+            }
+        });
     }
 
     // ---- Status -------------------------------------------------------------
@@ -1142,6 +1163,37 @@ impl Engine {
         self.db.task_rollup(task_id)
     }
 
+    /// Write a timestamped config backup (settings + projects) into the
+    /// configured directory, pruning to the most recent 10. Returns the path.
+    pub fn backup_now(&self) -> Result<PathBuf> {
+        let settings = self.db.get_settings()?;
+        let dir = settings.backup_dir.trim();
+        if dir.is_empty() {
+            return Err(CoreError::Invalid("no backup directory configured".into()));
+        }
+        let dir = PathBuf::from(dir);
+        std::fs::create_dir_all(&dir)?;
+        let bundle = crate::service::export_config(&self.db)?;
+        let json = serde_json::to_string_pretty(&bundle)?;
+        let ts = Utc::now().format("%Y%m%d-%H%M%S");
+        let path = dir.join(format!("orchestrator-config-{ts}.json"));
+        std::fs::write(&path, json)?;
+        prune_backups(&dir, 10);
+        self.log(
+            "info",
+            format!("config backup written to {}", path.display()),
+        );
+        self.record_activity(
+            "backup",
+            "info",
+            format!("Config backup written to {}", path.display()),
+            None,
+            None,
+            None,
+        );
+        Ok(path)
+    }
+
     /// Tasks that may need attention: a session running unusually long, or a
     /// task the verifier keeps bouncing toward its attempt limit.
     pub fn stuck_tasks(&self) -> Result<Vec<StuckTask>> {
@@ -1747,6 +1799,30 @@ impl Engine {
     }
 }
 
+/// Keep only the newest `keep` `orchestrator-config-*.json` backups in `dir`.
+fn prune_backups(dir: &Path, keep: usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("orchestrator-config-") && n.ends_with(".json"))
+                .unwrap_or(false)
+        })
+        .collect();
+    // Timestamped names sort lexicographically by time; newest last.
+    files.sort();
+    if files.len() > keep {
+        for old in &files[..files.len() - keep] {
+            let _ = std::fs::remove_file(old);
+        }
+    }
+}
+
 /// Append reviewer/error feedback as a bounded, clearly-delimited section.
 fn append_feedback(description: &str, feedback: &str) -> String {
     format!(
@@ -1875,6 +1951,41 @@ mod tests {
         let chosen = eng.choose_agent(&p, &task, &settings);
         assert!(p.allows(chosen));
         assert_ne!(chosen, AgentKind::Gemini);
+    }
+
+    #[test]
+    fn backup_writes_and_prunes() {
+        let eng = engine();
+        let dir = std::env::temp_dir().join(format!("orch-bk-{}", Uuid::new_v4()));
+        let mut s = eng.db.get_settings().unwrap();
+        s.backup_dir = dir.to_string_lossy().into_owned();
+        eng.db.save_settings(&s).unwrap();
+
+        // Write more than the retention to exercise pruning.
+        for i in 0..12 {
+            // Distinct names: backup_now uses second precision, so stamp manually.
+            let bundle = crate::service::export_config(&eng.db).unwrap();
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("orchestrator-config-2026010100000{i}.json")),
+                serde_json::to_string(&bundle).unwrap(),
+            )
+            .unwrap();
+        }
+        super::prune_backups(&dir, 10);
+        let count = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(count, 10);
+
+        // A real backup writes a file and succeeds.
+        let path = eng.backup_now().unwrap();
+        assert!(path.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn backup_without_dir_errors() {
+        let eng = engine();
+        assert!(eng.backup_now().is_err());
     }
 
     #[test]

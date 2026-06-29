@@ -113,6 +113,9 @@ fn default_retry_max_secs() -> u64 {
 fn default_activity_retention() -> u32 {
     2000
 }
+fn default_backup_interval_hours() -> u64 {
+    24
+}
 
 /// Global orchestrator settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,6 +176,15 @@ pub struct Settings {
     /// Maximum number of activity-log entries to retain; older ones are pruned.
     #[serde(default = "default_activity_retention")]
     pub activity_retention: u32,
+    /// When true, the config (settings + projects) is auto-exported on a cadence.
+    #[serde(default)]
+    pub backup_enabled: bool,
+    /// How often to write a config backup, in hours.
+    #[serde(default = "default_backup_interval_hours")]
+    pub backup_interval_hours: u64,
+    /// Directory to write config backups into (empty = backups disabled).
+    #[serde(default)]
+    pub backup_dir: String,
     /// Outbound notification webhooks (Slack / Discord / generic).
     #[serde(default)]
     pub webhooks: Vec<WebhookConfig>,
@@ -206,6 +218,9 @@ impl Default for Settings {
             retry_base_secs: 60,
             retry_max_secs: 3600,
             activity_retention: 2000,
+            backup_enabled: false,
+            backup_interval_hours: 24,
+            backup_dir: String::new(),
             webhooks: Vec::new(),
             agents,
         }

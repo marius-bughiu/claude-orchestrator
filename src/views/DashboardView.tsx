@@ -10,6 +10,8 @@ import { useStore } from "../store";
 import { formatCost, formatTokens, AGENT_LABELS } from "../lib/format";
 import { AgentComparison } from "../components/AgentComparison";
 import { NeedsAttention } from "../components/NeedsAttention";
+import { GettingStarted } from "../components/GettingStarted";
+import { LogConsole } from "../components/LogConsole";
 
 type Gran = "day" | "month" | "year";
 const GRANS: { label: string; value: Gran; limit: number }[] = [
@@ -154,8 +156,10 @@ export function DashboardView() {
         <StatCard icon={<PlayCircle size={20} />} label="Sessions" value={totals.sessions.toLocaleString()} />
       </div>
 
+      <GettingStarted />
       <NeedsAttention />
       <AgentComparison />
+      <LogConsole />
 
       {loading ? (
         <div className="py-16 text-center text-sm text-neutral-500">Loading…</div>

@@ -33,6 +33,7 @@ export function SettingsView() {
   const [health, setHealth] = useState<Record<string, { available: boolean; version: string | null }>>({});
   const [tests, setTests] = useState<Record<string, { ok: boolean; msg: string } | "sending">>({});
   const [configNotice, setConfigNotice] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [backupNotice, setBackupNotice] = useState<{ ok: boolean; msg: string } | null>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -73,6 +74,16 @@ export function SettingsView() {
       setConfigNotice({ ok: true, msg: `Imported ${res.projectsImported} project(s)${res.projectsSkipped ? `, skipped ${res.projectsSkipped}` : ""}.` });
     } catch (err) {
       setConfigNotice({ ok: false, msg: `Import failed: ${err}` });
+    }
+  };
+
+  const backupNow = async () => {
+    setBackupNotice(null);
+    try {
+      const path = await api.backupConfigNow();
+      setBackupNotice({ ok: true, msg: `Saved to ${path}` });
+    } catch (e) {
+      setBackupNotice({ ok: false, msg: String(e) });
     }
   };
 
@@ -423,6 +434,36 @@ export function SettingsView() {
             );
           })}
         </div>
+      </section>
+
+      <section className="card mt-5 p-4">
+        <h3 className="mb-1 text-sm font-semibold text-neutral-200">Scheduled backups</h3>
+        <p className="mb-3 text-xs text-neutral-500">
+          Auto-export your config to a folder on a cadence (keeps the latest 10).
+        </p>
+        <label className="mb-3 flex items-center gap-2 text-sm text-neutral-300">
+          <input type="checkbox" checked={draft.backupEnabled} onChange={(e) => set({ backupEnabled: e.target.checked })} />
+          Enable scheduled config backups
+        </label>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Interval (hours)</span>
+            <input type="number" min={1} className="input" value={draft.backupIntervalHours} disabled={!draft.backupEnabled}
+              onChange={(e) => set({ backupIntervalHours: Math.max(1, Number(e.target.value)) })} />
+          </label>
+          <label className="text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Backup directory</span>
+            <input className="input font-mono text-xs" placeholder="/path/to/backups" value={draft.backupDir}
+              onChange={(e) => set({ backupDir: e.target.value })} />
+          </label>
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <button className="btn" onClick={backupNow} disabled={!draft.backupDir.trim()}>Back up now</button>
+          {backupNotice && (
+            <span className={`text-xs ${backupNotice.ok ? "text-emerald-400" : "text-rose-400"}`}>{backupNotice.msg}</span>
+          )}
+        </div>
+        <p className="mt-2 text-[11px] text-neutral-600">Save settings first so a new directory takes effect for scheduled backups.</p>
       </section>
 
       <section className="card mt-5 p-4">

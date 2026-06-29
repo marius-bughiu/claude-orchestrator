@@ -196,6 +196,9 @@ export interface Settings {
   retryBaseSecs: number;
   retryMaxSecs: number;
   activityRetention: number;
+  backupEnabled: boolean;
+  backupIntervalHours: number;
+  backupDir: string;
   webhooks: WebhookConfig[];
   agents: Record<string, AgentConfig>;
 }

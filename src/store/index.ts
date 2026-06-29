@@ -49,6 +49,7 @@ interface StoreState {
   refreshScheduled: () => Promise<void>;
   refreshAll: () => Promise<void>;
   markActivityRead: () => void;
+  clearLogs: () => void;
   handleEvent: (event: OrchestratorEvent) => void;
 }
 
@@ -94,6 +95,7 @@ export const useStore = create<StoreState>((set, get) => ({
   refreshSettings: async () => set({ settings: await api.getSettings() }),
   refreshScheduled: async () => set({ scheduled: await api.listScheduled() }),
   markActivityRead: () => set({ unread: 0 }),
+  clearLogs: () => set({ logs: [] }),
 
   refreshAll: async () => {
     const [status, projects, tasks, timeline, settings, scheduled] = await Promise.all([

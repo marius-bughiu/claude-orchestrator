@@ -295,6 +295,15 @@ pub fn import_config(state: State<AppState>, bundle: ConfigBundle) -> CmdResult<
     Ok(res)
 }
 
+#[tauri::command]
+pub fn backup_config_now(state: State<AppState>) -> CmdResult<String> {
+    state
+        .engine
+        .backup_now()
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(err)
+}
+
 // ---- Scheduled tasks -------------------------------------------------------
 
 #[tauri::command]
