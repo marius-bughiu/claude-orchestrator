@@ -184,6 +184,14 @@ pub struct Settings {
     /// being buried forever behind a stream of higher-priority work.
     #[serde(default)]
     pub priority_aging_per_hour: f64,
+    /// Cap on a project's pending queue that the roadmap loop will fill to
+    /// (0 = unlimited). Bounds the self-generated backlog.
+    #[serde(default)]
+    pub roadmap_max_pending: u32,
+    /// Minimum minutes between roadmap runs for a project (0 = no cooldown).
+    /// Stops the loop from regenerating immediately after a run.
+    #[serde(default)]
+    pub roadmap_min_interval_mins: u32,
     /// When true, desktop notifications are suppressed during the quiet-hours
     /// window (local time), so unattended overnight runs don't ping the user.
     #[serde(default)]
@@ -259,6 +267,8 @@ impl Default for Settings {
             retry_max_secs: 3600,
             activity_retention: 2000,
             priority_aging_per_hour: 0.0,
+            roadmap_max_pending: 0,
+            roadmap_min_interval_mins: 0,
             quiet_hours_enabled: false,
             quiet_hours_start: 22,
             quiet_hours_end: 8,

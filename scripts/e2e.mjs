@@ -296,6 +296,12 @@ try {
     await seesText("dependency cycle");
     await seesText("missing prerequisite");
   });
+  await check("settings exposes roadmap safeguards", async () => {
+    await goto("/#/settings");
+    await seesText("Roadmap backlog cap");
+    await seesText("Roadmap cooldown (min)");
+    await seesText("skips generating tasks that duplicate work already open");
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

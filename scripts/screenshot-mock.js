@@ -79,7 +79,7 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const settings = {
-    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, priorityAgingPerHour: 5, quietHoursEnabled: false, quietHoursStart: 22, quietHoursEnd: 8, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
+    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, priorityAgingPerHour: 5, roadmapMaxPending: 20, roadmapMinIntervalMins: 30, quietHoursEnabled: false, quietHoursStart: 22, quietHoursEnd: 8, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
     webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" }],
     taskTemplates: [{ id: "tpl1", name: "Bug fix", title: "Fix: ", description: "Reproduce, fix, and add a regression test.", agent: null, priority: 100, tags: ["bug"] }],
     agents: {

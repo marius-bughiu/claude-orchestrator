@@ -408,6 +408,7 @@ impl Engine {
         }
 
         // --- Phase 2: roadmap loop for projects with a genuinely empty queue. ---
+        let now = Utc::now();
         for project in projects.iter().filter(|p| p.enabled) {
             if active >= global_max {
                 break;
@@ -424,6 +425,16 @@ impl Engine {
                 || self.has_backing_off_tasks(&project.id)?
             {
                 continue;
+            }
+            // Cooldown: don't regenerate within the configured interval of the
+            // last roadmap run for this project.
+            if settings.roadmap_min_interval_mins > 0 {
+                if let Some(last) = self.db.last_roadmap_at(&project.id)? {
+                    let mins = (now - last).num_minutes();
+                    if mins >= 0 && (mins as u32) < settings.roadmap_min_interval_mins {
+                        continue;
+                    }
+                }
             }
             let roadmap_active = active_sessions
                 .iter()
@@ -2113,9 +2124,46 @@ impl Engine {
             return Ok(());
         }
         let project = self.db.get_project(&session.project_id)?;
+        let settings = self.db.get_settings()?;
         let now = Utc::now();
+
+        // Dedup against the project's open (non-terminal) tasks so the roadmap
+        // never re-queues work already in flight. Normalize titles for matching.
+        let norm = |s: &str| s.trim().to_lowercase();
+        let mut open_titles: std::collections::HashSet<String> = self
+            .db
+            .list_tasks(Some(&project.id))?
+            .iter()
+            .filter(|t| {
+                !matches!(
+                    t.status,
+                    TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+                )
+            })
+            .map(|t| norm(&t.title))
+            .collect();
+
+        // Cap the pending backlog the roadmap is allowed to fill (0 = unlimited).
+        let mut budget = if settings.roadmap_max_pending > 0 {
+            settings
+                .roadmap_max_pending
+                .saturating_sub(self.db.count_pending_tasks_for_project(&project.id)?)
+        } else {
+            u32::MAX
+        };
+
         let mut created = 0;
+        let mut skipped = 0;
         for spec in specs {
+            if budget == 0 {
+                skipped += 1;
+                continue;
+            }
+            // Skip duplicates of work already open (or already created this batch).
+            if !open_titles.insert(norm(&spec.title)) {
+                skipped += 1;
+                continue;
+            }
             // Respect an explicitly-requested agent only if the project allows it;
             // otherwise leave it auto so the scheduler load-balances.
             let requested = spec.agent.as_deref().and_then(AgentKind::from_str);
@@ -2123,6 +2171,7 @@ impl Engine {
                 Some(a) if project.allows(a) => (a, false),
                 _ => (project.default_agent, true),
             };
+            budget -= 1;
             let task = Task {
                 id: Uuid::new_v4().to_string(),
                 project_id: project.id.clone(),
@@ -2148,9 +2197,17 @@ impl Engine {
             self.emit(OrchestratorEvent::TaskUpdated { task });
             created += 1;
         }
+        let skip_note = if skipped > 0 {
+            format!(" (skipped {skipped} duplicate/over-cap)")
+        } else {
+            String::new()
+        };
         self.log(
             "info",
-            format!("roadmap created {created} task(s) for {}", project.name),
+            format!(
+                "roadmap created {created} task(s) for {}{skip_note}",
+                project.name
+            ),
         );
         if created > 0 {
             self.record_activity(
@@ -2551,6 +2608,57 @@ mod tests {
         assert_eq!(q.len(), 2);
         assert_eq!(q[0].task.title, "high");
         assert_eq!(q[0].project_name, "p");
+    }
+
+    fn roadmap_outcome(text: &str) -> crate::runner::RunOutcome {
+        crate::runner::RunOutcome {
+            success: true,
+            agent_session_id: None,
+            model: None,
+            result_text: Some(text.to_string()),
+            usage: TokenUsage::default(),
+            exit_code: Some(0),
+            error: None,
+            cancelled: false,
+            timed_out: false,
+        }
+    }
+
+    #[test]
+    fn roadmap_dedups_open_tasks_and_respects_cap() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        // An open task the roadmap will try to duplicate.
+        let mut existing = mk_task(&p.id, AgentKind::Claude, false);
+        existing.title = "Add logging".into();
+        existing.status = TaskStatus::Pending;
+        eng.db.upsert_task(&existing).unwrap();
+
+        let session = eng.new_session(&p, None, AgentKind::Claude, SessionKind::Roadmap, "plan");
+        let batch = "```json\n[{\"title\":\"Add logging\"},{\"title\":\"Write docs\"},{\"title\":\"Refactor parser\"}]\n```";
+        eng.handle_roadmap_outcome(&session, &roadmap_outcome(batch))
+            .unwrap();
+
+        // Duplicate of "Add logging" skipped; two new tasks created.
+        let tasks = eng.db.list_tasks(Some(&p.id)).unwrap();
+        assert_eq!(tasks.len(), 3);
+        assert_eq!(tasks.iter().filter(|t| t.auto_generated).count(), 2);
+    }
+
+    #[test]
+    fn roadmap_cap_limits_new_tasks() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let mut s = eng.db.get_settings().unwrap();
+        s.roadmap_max_pending = 2;
+        eng.db.save_settings(&s).unwrap();
+
+        let session = eng.new_session(&p, None, AgentKind::Claude, SessionKind::Roadmap, "plan");
+        let batch = "```json\n[{\"title\":\"a\"},{\"title\":\"b\"},{\"title\":\"c\"},{\"title\":\"d\"}]\n```";
+        eng.handle_roadmap_outcome(&session, &roadmap_outcome(batch))
+            .unwrap();
+        // Cap of 2 pending honored.
+        assert_eq!(eng.db.count_pending_tasks_for_project(&p.id).unwrap(), 2);
     }
 
     #[test]

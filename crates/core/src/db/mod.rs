@@ -484,6 +484,32 @@ impl Db {
         Ok(n as u32)
     }
 
+    /// Count a project's tasks currently in the Pending state.
+    pub fn count_pending_tasks_for_project(&self, project_id: &str) -> Result<u32> {
+        let conn = self.lock();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE project_id = ?1 AND status = 'pending'",
+            params![project_id],
+            |r| r.get(0),
+        )?;
+        Ok(n as u32)
+    }
+
+    /// When the most recent roadmap session for a project was created, if any.
+    pub fn last_roadmap_at(&self, project_id: &str) -> Result<Option<DateTime<Utc>>> {
+        let conn = self.lock();
+        let ts: Option<DateTime<Utc>> = conn
+            .query_row(
+                "SELECT created_at FROM sessions \
+                 WHERE project_id = ?1 AND kind = 'roadmap' \
+                 ORDER BY created_at DESC LIMIT 1",
+                params![project_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(ts)
+    }
+
     pub fn count_active_sessions_for_agent(&self, agent: AgentKind) -> Result<u32> {
         let conn = self.lock();
         let n: i64 = conn.query_row(

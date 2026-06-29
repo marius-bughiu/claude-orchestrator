@@ -249,6 +249,23 @@ export function SettingsView() {
             Anti-starvation: a waiting task gains this much effective priority each hour, so old low-priority work isn't buried forever. 0 disables aging.
           </span>
         </label>
+        <div className="mt-4 grid max-w-[460px] grid-cols-2 gap-4">
+          <label className="block text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Roadmap backlog cap</span>
+            <input type="number" min={0} className="input" value={draft.roadmapMaxPending}
+              onChange={(e) => set({ roadmapMaxPending: Math.max(0, Number(e.target.value)) })} />
+            <span className="mt-1 block text-[11px] text-neutral-500">Max pending tasks the roadmap fills to (0 = unlimited).</span>
+          </label>
+          <label className="block text-sm text-neutral-300">
+            <span className="mb-1 block text-xs text-neutral-400">Roadmap cooldown (min)</span>
+            <input type="number" min={0} className="input" value={draft.roadmapMinIntervalMins}
+              onChange={(e) => set({ roadmapMinIntervalMins: Math.max(0, Number(e.target.value)) })} />
+            <span className="mt-1 block text-[11px] text-neutral-500">Min minutes between roadmap runs per project (0 = none).</span>
+          </label>
+        </div>
+        <p className="mt-2 text-[11px] text-neutral-500">
+          The roadmap loop also skips generating tasks that duplicate work already open in a project.
+        </p>
       </section>
 
       <section className="card mb-5 p-4">

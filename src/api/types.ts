@@ -200,6 +200,8 @@ export interface Settings {
   retryMaxSecs: number;
   activityRetention: number;
   priorityAgingPerHour: number;
+  roadmapMaxPending: number;
+  roadmapMinIntervalMins: number;
   quietHoursEnabled: boolean;
   quietHoursStart: number;
   quietHoursEnd: number;
