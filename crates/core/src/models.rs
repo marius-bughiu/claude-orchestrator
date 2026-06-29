@@ -275,6 +275,9 @@ pub struct Task {
     /// Earliest time this task may be (re)scheduled. Set after a failed attempt
     /// to enforce retry backoff; `None` means eligible immediately.
     pub retry_at: Option<DateTime<Utc>>,
+    /// Free-form human notes, separate from the agent-facing `description`.
+    #[serde(default)]
+    pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

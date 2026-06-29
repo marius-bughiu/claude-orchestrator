@@ -107,6 +107,7 @@ pub fn run() {
             commands::list_pull_requests,
             commands::merge_pull_request,
             commands::session_diff,
+            commands::purge_tasks,
             commands::agent_health,
             commands::diagnostics,
             commands::search_sessions,

@@ -59,12 +59,14 @@ export function TaskDetailView() {
   const [rollup, setRollup] = useState<{ sessions: number; totalCostUsd: number; totalTokens: number; totalDurationSecs: number } | null>(null);
   const [desc, setDesc] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
+  const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
   const [addingDep, setAddingDep] = useState("");
 
   useEffect(() => {
     let active = true;
-    const loadTask = () => api.getTask(id).then((t) => { if (active) { setTask(t); setDesc(t.description); setTitleDraft(t.title); } }).catch(() => {});
+    const loadTask = () => api.getTask(id).then((t) => { if (active) { setTask(t); setDesc(t.description); setTitleDraft(t.title); setNotes(t.notes ?? ""); } }).catch(() => {});
     const loadSessions = () => api.listSessions({ taskId: id }).then((s) => active && setSessions(s)).catch(() => {});
     const loadRollup = () => api.taskRollup(id).then((r) => active && setRollup(r)).catch(() => {});
     loadTask();
@@ -100,6 +102,11 @@ export function TaskDetailView() {
     await api.updateTask({ ...task, description: desc });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  };
+  const saveNotes = async () => {
+    await api.updateTask({ ...task, notes: notes.trim() ? notes : null });
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 1500);
   };
   const patch = async (p: Partial<Task>) => {
     const next = { ...task, ...p };
@@ -208,6 +215,22 @@ export function TaskDetailView() {
             <Save size={14} /> Save
           </button>
           {saved && <span className="text-xs text-emerald-400">Saved</span>}
+        </div>
+      </div>
+
+      <div className="card mb-4 p-4">
+        <label className="mb-1 block text-xs text-neutral-400">Notes <span className="text-neutral-600">(for you — not sent to the agent)</span></label>
+        <textarea
+          className="input min-h-[80px] resize-y text-sm"
+          value={notes}
+          placeholder="Add context, links, or reminders for this task…"
+          onChange={(e) => setNotes(e.target.value)}
+        />
+        <div className="mt-2 flex items-center gap-2">
+          <button className="btn btn-primary" onClick={saveNotes} disabled={notes === (task.notes ?? "")}>
+            <Save size={14} /> Save notes
+          </button>
+          {notesSaved && <span className="text-xs text-emerald-400">Saved</span>}
         </div>
       </div>
 

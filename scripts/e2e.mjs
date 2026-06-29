@@ -243,6 +243,25 @@ try {
     await goto("/#/tasks/t1");
     await page.getByRole("button", { name: "Transcripts" }).waitFor({ state: "visible" });
   });
+  await check("task detail has an editable notes field", async () => {
+    await goto("/#/tasks/t1");
+    await seesText("not sent to the agent");
+    const notes = page.getByPlaceholder("Add context, links, or reminders for this task…");
+    await notes.fill("call the user");
+    assert.equal(await notes.inputValue(), "call the user");
+  });
+  await check("tasks view offers clear-completed", async () => {
+    await goto("/#/tasks");
+    // The mock has one completed and one cancelled-ish task; button shows a count.
+    await page.getByRole("button", { name: /Clear completed/ }).waitFor({ state: "visible" });
+  });
+  await check("bulk selection exposes priority + tag actions", async () => {
+    await goto("/#/tasks");
+    await page.locator('tbody input[type="checkbox"]').first().check();
+    await seesText("selected");
+    await page.getByRole("combobox").filter({ hasText: "Set priority…" }).waitFor({ state: "visible" });
+    await page.getByPlaceholder("add tag…").waitFor({ state: "visible" });
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

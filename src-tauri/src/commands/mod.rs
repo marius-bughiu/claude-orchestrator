@@ -104,6 +104,22 @@ pub fn delete_task(state: State<AppState>, id: String) -> CmdResult<()> {
     state.engine.db().delete_task(&id).map_err(err)
 }
 
+/// Bulk-delete tasks in the given statuses (e.g. completed/cancelled), optionally
+/// scoped to one project. Returns how many were removed.
+#[tauri::command]
+pub fn purge_tasks(
+    state: State<AppState>,
+    statuses: Vec<String>,
+    project_id: Option<String>,
+) -> CmdResult<u32> {
+    let statuses: Vec<TaskStatus> = statuses.iter().map(|s| TaskStatus::from_str(s)).collect();
+    state
+        .engine
+        .db()
+        .purge_tasks(project_id.as_deref(), &statuses)
+        .map_err(err)
+}
+
 /// Force a task back into the queue so the scheduler picks it up promptly.
 #[tauri::command]
 pub fn run_task_now(state: State<AppState>, id: String) -> CmdResult<()> {

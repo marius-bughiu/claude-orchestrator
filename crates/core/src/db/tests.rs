@@ -40,6 +40,7 @@ fn task(id: &str, project_id: &str, status: TaskStatus, priority: i64) -> Task {
         tags: vec![],
         auto_generated: false,
         retry_at: None,
+        notes: None,
         created_at: now,
         updated_at: now,
     }

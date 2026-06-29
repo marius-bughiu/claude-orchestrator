@@ -571,6 +571,7 @@ impl Engine {
                 tags: vec!["scheduled".into()],
                 auto_generated: true,
                 retry_at: None,
+                notes: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -923,6 +924,7 @@ impl Engine {
                 tags,
                 auto_generated: true,
                 retry_at: None,
+                notes: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -1988,6 +1990,7 @@ impl Engine {
                 tags: spec.tags.clone(),
                 auto_generated: true,
                 retry_at: None,
+                notes: None,
                 created_at: now,
                 updated_at: now,
             };
@@ -2169,6 +2172,7 @@ mod tests {
             tags: vec![],
             auto_generated: false,
             retry_at: None,
+            notes: None,
             created_at: now,
             updated_at: now,
         }
@@ -2260,6 +2264,46 @@ mod tests {
         assert!(md.contains("1 session(s)"));
         assert!(md.contains("### Prompt"));
         assert!(md.contains("do the thing"));
+    }
+
+    #[test]
+    fn purge_tasks_removes_only_matching_statuses() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let mk = |status: TaskStatus| {
+            let mut t = mk_task(&p.id, AgentKind::Claude, false);
+            t.status = status;
+            eng.db.upsert_task(&t).unwrap();
+        };
+        mk(TaskStatus::Completed);
+        mk(TaskStatus::Completed);
+        mk(TaskStatus::Cancelled);
+        mk(TaskStatus::Pending);
+
+        let removed = eng
+            .db
+            .purge_tasks(Some(&p.id), &[TaskStatus::Completed, TaskStatus::Cancelled])
+            .unwrap();
+        assert_eq!(removed, 3);
+        let left = eng.db.list_tasks(Some(&p.id)).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].status, TaskStatus::Pending);
+        // Empty status list is a no-op.
+        assert_eq!(eng.db.purge_tasks(None, &[]).unwrap(), 0);
+    }
+
+    #[test]
+    fn task_notes_round_trip() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let mut t = mk_task(&p.id, AgentKind::Claude, false);
+        t.notes = Some("ask the user about the API shape".into());
+        eng.db.upsert_task(&t).unwrap();
+        let got = eng.db.get_task(&t.id).unwrap();
+        assert_eq!(
+            got.notes.as_deref(),
+            Some("ask the user about the API shape")
+        );
     }
 
     #[test]

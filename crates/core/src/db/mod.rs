@@ -27,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tasks ADD COLUMN retry_at TEXT",
     "ALTER TABLE projects ADD COLUMN default_max_attempts INTEGER",
     "ALTER TABLE projects ADD COLUMN mcp_config TEXT",
+    "ALTER TABLE tasks ADD COLUMN notes TEXT",
 ];
 
 fn run_migrations(conn: &Connection) {
@@ -212,8 +213,8 @@ impl Db {
             "INSERT INTO tasks
                (id, project_id, title, description, status, priority, agent, auto_agent, model,
                 parent_id, depends_on, attempts, max_attempts, tags, auto_generated,
-                retry_at, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)
+                retry_at, notes, created_at, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
              ON CONFLICT(id) DO UPDATE SET
                title=excluded.title, description=excluded.description, status=excluded.status,
                priority=excluded.priority, agent=excluded.agent, auto_agent=excluded.auto_agent,
@@ -221,7 +222,7 @@ impl Db {
                depends_on=excluded.depends_on, attempts=excluded.attempts,
                max_attempts=excluded.max_attempts, tags=excluded.tags,
                auto_generated=excluded.auto_generated, retry_at=excluded.retry_at,
-               updated_at=excluded.updated_at",
+               notes=excluded.notes, updated_at=excluded.updated_at",
             params![
                 t.id,
                 t.project_id,
@@ -239,6 +240,7 @@ impl Db {
                 tags,
                 t.auto_generated,
                 t.retry_at,
+                t.notes,
                 t.created_at,
                 t.updated_at,
             ],
@@ -250,6 +252,30 @@ impl Db {
         self.lock()
             .execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    /// Delete all tasks in the given statuses, optionally scoped to a project.
+    /// Returns how many were removed.
+    pub fn purge_tasks(&self, project_id: Option<&str>, statuses: &[TaskStatus]) -> Result<u32> {
+        if statuses.is_empty() {
+            return Ok(0);
+        }
+        let placeholders = statuses.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let conn = self.lock();
+        let mut sql = format!("DELETE FROM tasks WHERE status IN ({placeholders})");
+        let mut args: Vec<Box<dyn rusqlite::ToSql>> = statuses
+            .iter()
+            .map(|s| Box::new(s.as_str().to_string()) as Box<dyn rusqlite::ToSql>)
+            .collect();
+        if let Some(pid) = project_id {
+            sql.push_str(" AND project_id = ?");
+            args.push(Box::new(pid.to_string()));
+        }
+        let n = conn.execute(
+            &sql,
+            rusqlite::params_from_iter(args.iter().map(|b| b.as_ref())),
+        )?;
+        Ok(n as u32)
     }
 
     /// Count tasks that are pending or awaiting retry for a project.
@@ -1028,6 +1054,7 @@ fn map_task(r: &Row) -> rusqlite::Result<Task> {
         tags: serde_json::from_str(&tags).unwrap_or_default(),
         auto_generated: r.get("auto_generated")?,
         retry_at: r.get("retry_at")?,
+        notes: r.get("notes")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })

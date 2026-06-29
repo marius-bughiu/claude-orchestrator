@@ -65,6 +65,8 @@ export const createTasksBulk = (input: {
 }) => invoke<Task[]>("create_tasks_bulk", { input });
 export const updateTask = (task: Task) => invoke<void>("update_task", { task });
 export const deleteTask = (id: string) => invoke<void>("delete_task", { id });
+export const purgeTasks = (statuses: string[], projectId?: string) =>
+  invoke<number>("purge_tasks", { statuses, projectId: projectId ?? null });
 export const runTaskNow = (id: string) => invoke<void>("run_task_now", { id });
 export const retryTask = (id: string) => invoke<void>("retry_task", { id });
 export const cloneTask = (id: string) => invoke<Task>("clone_task", { id });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, ListPlus, Download } from "lucide-react";
+import { Plus, Search, ListPlus, Download, Trash2 } from "lucide-react";
+import * as api from "../api";
 import { useStore } from "../store";
 import type { TaskStatus } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
@@ -78,6 +79,21 @@ export function TasksView() {
     });
   }, [tasks, projectFilter, statusFilter, search, activeTags]);
 
+  const completedCount = useMemo(
+    () => tasks.filter((t) => {
+      if (projectFilter !== "all" && t.projectId !== projectFilter) return false;
+      return t.status === "completed" || t.status === "cancelled";
+    }).length,
+    [tasks, projectFilter],
+  );
+
+  const clearCompleted = async () => {
+    const scope = projectFilter === "all" ? "all projects" : projectName(projectFilter);
+    if (!window.confirm(`Delete ${completedCount} completed/cancelled task(s) in ${scope}? This cannot be undone.`)) return;
+    await api.purgeTasks(["completed", "cancelled"], projectFilter === "all" ? undefined : projectFilter);
+    await refreshAll();
+  };
+
   // Export the currently-filtered task list as CSV.
   const exportCsv = () => {
     const cols = ["title", "project", "status", "priority", "agent", "attempts", "maxAttempts", "tags", "createdAt", "updatedAt"] as const;
@@ -104,6 +120,9 @@ export function TasksView() {
           <p className="text-xs text-neutral-500">All work across every project.</p>
         </div>
         <div className="flex gap-2">
+          <button className="btn" onClick={clearCompleted} disabled={completedCount === 0} title="Delete completed and cancelled tasks">
+            <Trash2 size={15} /> Clear completed{completedCount > 0 ? ` (${completedCount})` : ""}
+          </button>
           <button className="btn" onClick={exportCsv} disabled={filtered.length === 0} title="Export the filtered tasks as CSV">
             <Download size={15} /> CSV
           </button>

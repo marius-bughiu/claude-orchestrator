@@ -29,6 +29,7 @@ export function TaskTable({ tasks, showProject = false }: { tasks: Task[]; showP
   const refreshTasks = useStore((s) => s.refreshTasks);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [tagInput, setTagInput] = useState("");
 
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id.slice(0, 6);
 
@@ -61,6 +62,22 @@ export function TaskTable({ tasks, showProject = false }: { tasks: Task[]; showP
     }
   };
 
+  // Apply a field patch to every selected task via update_task.
+  const patchSelected = async (patch: (t: Task) => Partial<Task>) => {
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    await bulk(async (id) => {
+      const t = byId.get(id);
+      if (t) await api.updateTask({ ...t, ...patch(t) });
+    });
+  };
+  const bulkSetPriority = (priority: number) => patchSelected(() => ({ priority }));
+  const bulkAddTag = async () => {
+    const tag = tagInput.trim();
+    if (!tag) return;
+    setTagInput("");
+    await patchSelected((t) => (t.tags.includes(tag) ? {} : { tags: [...t.tags, tag] }));
+  };
+
   if (tasks.length === 0) {
     return <div className="px-4 py-8 text-center text-sm text-neutral-500">No tasks.</div>;
   }
@@ -79,6 +96,29 @@ export function TaskTable({ tasks, showProject = false }: { tasks: Task[]; showP
           <button className="btn btn-danger !py-1" disabled={busy} onClick={() => bulk(api.deleteTask)}>
             <Trash2 size={13} /> Delete
           </button>
+          <span className="mx-1 h-4 w-px bg-indigo-400/30" />
+          <select
+            className="input !w-auto !py-1 text-xs"
+            value=""
+            disabled={busy}
+            title="Set priority for selected"
+            onChange={(e) => { if (e.target.value) bulkSetPriority(Number(e.target.value)); }}
+          >
+            <option value="">Set priority…</option>
+            <option value="0">Low</option>
+            <option value="50">Normal</option>
+            <option value="100">High</option>
+            <option value="200">Urgent</option>
+          </select>
+          <input
+            className="input !w-28 !py-1 text-xs"
+            placeholder="add tag…"
+            value={tagInput}
+            disabled={busy}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") bulkAddTag(); }}
+          />
+          <button className="btn !py-1" disabled={busy || !tagInput.trim()} onClick={bulkAddTag}>Tag</button>
           <button className="ml-auto text-indigo-300 hover:text-white" onClick={clear} title="Clear selection">
             <X size={16} />
           </button>
