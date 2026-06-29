@@ -986,6 +986,98 @@ impl Engine {
         Ok(out)
     }
 
+    /// Run a system self-check across agents, git, the database, and project
+    /// configuration. Returns one line item per finding so the UI can render a
+    /// severity-coded list.
+    pub fn diagnostics(&self) -> Result<Vec<Diagnostic>> {
+        let mut out = Vec::new();
+
+        // Agents — reuse the health probe and remember availability for the
+        // per-project check below.
+        let health = self.agent_health()?;
+        let mut available: std::collections::HashMap<AgentKind, bool> =
+            std::collections::HashMap::new();
+        for h in &health {
+            available.insert(h.agent, h.available);
+            out.push(Diagnostic {
+                category: "agent".into(),
+                name: format!("{} CLI", h.agent.as_str()),
+                level: if h.available { "ok" } else { "warn" }.into(),
+                detail: if h.available {
+                    h.version.clone().unwrap_or_else(|| "installed".into())
+                } else {
+                    format!("`{}` not found on PATH", h.binary)
+                },
+            });
+        }
+
+        // git — required for branch/PR/worktree features.
+        let git_ok = util::binary_available("git");
+        out.push(Diagnostic {
+            category: "git".into(),
+            name: "git".into(),
+            level: if git_ok { "ok" } else { "error" }.into(),
+            detail: if git_ok {
+                "available on PATH".into()
+            } else {
+                "`git` not found on PATH — branches, PRs and worktrees will fail".into()
+            },
+        });
+
+        // Database — confirm the file is writable, not just present.
+        match self.db.writable() {
+            Ok(()) => out.push(Diagnostic {
+                category: "database".into(),
+                name: "database".into(),
+                level: "ok".into(),
+                detail: "writable".into(),
+            }),
+            Err(e) => out.push(Diagnostic {
+                category: "database".into(),
+                name: "database".into(),
+                level: "error".into(),
+                detail: format!("not writable: {e}"),
+            }),
+        }
+
+        // Projects — flag missing paths and allowed-but-uninstalled agents.
+        let settings = self.db.get_settings()?;
+        for p in self.db.list_projects()? {
+            if !p.enabled {
+                continue;
+            }
+            if !Path::new(&p.path).is_dir() {
+                out.push(Diagnostic {
+                    category: "project".into(),
+                    name: p.name.clone(),
+                    level: "error".into(),
+                    detail: format!("path no longer exists: {}", p.path),
+                });
+                continue;
+            }
+            for a in p.effective_allowed_agents() {
+                let installed = available.get(&a).copied().unwrap_or_else(|| {
+                    let cfg = settings.agent_config(a);
+                    let binary = cfg
+                        .binary
+                        .clone()
+                        .unwrap_or_else(|| agents::adapter_for(a).default_binary().to_string());
+                    util::binary_available(&binary)
+                });
+                if !installed {
+                    out.push(Diagnostic {
+                        category: "project".into(),
+                        name: p.name.clone(),
+                        level: "warn".into(),
+                        detail: format!("allows {} but its CLI isn't installed", a.as_str()),
+                    });
+                }
+            }
+        }
+
+        Ok(out)
+    }
+
     /// List orchestrator-created branches in a project repo, flagging which are
     /// merged and which a running session is still using.
     pub fn list_branches(&self, project_id: &str) -> Result<Vec<BranchInfo>> {
@@ -1932,6 +2024,34 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    #[test]
+    fn diagnostics_reports_core_categories() {
+        let eng = engine();
+        let diags = eng.diagnostics().unwrap();
+        // One line per agent, plus git and database.
+        assert!(diags.iter().any(|d| d.category == "git"));
+        let db = diags.iter().find(|d| d.category == "database").unwrap();
+        assert_eq!(db.level, "ok", "in-memory db must be writable");
+        assert_eq!(
+            diags.iter().filter(|d| d.category == "agent").count(),
+            AgentKind::ALL.len()
+        );
+        // Every finding carries a known severity.
+        assert!(diags
+            .iter()
+            .all(|d| ["ok", "warn", "error"].contains(&d.level.as_str())));
+    }
+
+    #[test]
+    fn diagnostics_flags_missing_project_path() {
+        let eng = engine();
+        mk_project(&eng, "/no/such/path/xyz", vec![AgentKind::Claude]);
+        let diags = eng.diagnostics().unwrap();
+        assert!(diags
+            .iter()
+            .any(|d| d.category == "project" && d.level == "error" && d.detail.contains("path")));
     }
 
     #[test]

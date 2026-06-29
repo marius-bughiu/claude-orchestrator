@@ -172,6 +172,14 @@ window.__TAURI_INTERNALS__ = {
         return Promise.resolve(map[args.projectId] || []);
       }
       case "merge_pull_request": return Promise.resolve(null);
+      case "diagnostics": return Promise.resolve([
+        { category: "agent", name: "claude CLI", level: "ok", detail: "claude 1.2.3 (Claude Code)" },
+        { category: "agent", name: "gemini CLI", level: "ok", detail: "gemini-cli 0.4.0" },
+        { category: "agent", name: "codex CLI", level: "warn", detail: "`codex` not found on PATH" },
+        { category: "git", name: "git", level: "ok", detail: "available on PATH" },
+        { category: "database", name: "database", level: "ok", detail: "writable" },
+        { category: "project", name: "api-gateway", level: "warn", detail: "allows codex but its CLI isn't installed" },
+      ]);
       case "agent_health": return Promise.resolve([
         { agent: "claude", binary: "claude", available: true, version: "claude 1.2.3 (Claude Code)" },
         { agent: "gemini", binary: "gemini", available: true, version: "gemini-cli 0.4.0" },

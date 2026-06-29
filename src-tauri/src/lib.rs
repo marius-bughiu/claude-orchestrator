@@ -108,6 +108,7 @@ pub fn run() {
             commands::merge_pull_request,
             commands::session_diff,
             commands::agent_health,
+            commands::diagnostics,
             commands::list_branches,
             commands::delete_branch,
             commands::prune_worktrees,

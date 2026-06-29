@@ -67,6 +67,16 @@ impl Db {
         self.conn.lock().expect("db mutex poisoned")
     }
 
+    /// Probe that the database file is writable (not just readable) by creating
+    /// and dropping a scratch table on the main schema. Used by diagnostics.
+    pub fn writable(&self) -> Result<()> {
+        let conn = self.lock();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS _healthcheck (x INTEGER); DROP TABLE _healthcheck;",
+        )?;
+        Ok(())
+    }
+
     // ---- Settings -----------------------------------------------------------
 
     pub fn get_settings(&self) -> Result<Settings> {

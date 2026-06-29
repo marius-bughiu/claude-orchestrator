@@ -246,6 +246,15 @@ export interface AgentHealth {
   version: string | null;
 }
 
+export type DiagnosticLevel = "ok" | "warn" | "error";
+
+export interface Diagnostic {
+  category: string;
+  name: string;
+  level: DiagnosticLevel;
+  detail: string;
+}
+
 export interface BranchInfo {
   name: string;
   merged: boolean;

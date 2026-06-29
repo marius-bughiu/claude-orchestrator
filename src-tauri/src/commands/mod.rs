@@ -421,6 +421,11 @@ pub fn agent_health(state: State<AppState>) -> CmdResult<Vec<AgentHealth>> {
 }
 
 #[tauri::command]
+pub fn diagnostics(state: State<AppState>) -> CmdResult<Vec<Diagnostic>> {
+    state.engine.diagnostics().map_err(err)
+}
+
+#[tauri::command]
 pub fn list_branches(state: State<AppState>, project_id: String) -> CmdResult<Vec<BranchInfo>> {
     state.engine.list_branches(&project_id).map_err(err)
 }

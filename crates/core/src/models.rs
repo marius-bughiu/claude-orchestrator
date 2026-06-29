@@ -493,6 +493,17 @@ pub struct AgentHealth {
     pub version: Option<String>,
 }
 
+/// One line item in a system self-check. Categories: `agent`, `git`,
+/// `database`, `project`. Level is `ok`, `warn`, or `error`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Diagnostic {
+    pub category: String,
+    pub name: String,
+    pub level: String,
+    pub detail: String,
+}
+
 /// A managed (orchestrator-created) branch in a project repo, for cleanup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

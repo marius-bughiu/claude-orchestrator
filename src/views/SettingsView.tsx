@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Save, AlertTriangle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { Save, AlertTriangle, RefreshCw, CheckCircle2, XCircle, Stethoscope } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
-import type { AgentKind, PermissionMode, Settings, WebhookConfig } from "../api/types";
+import type { AgentKind, Diagnostic, PermissionMode, Settings, WebhookConfig } from "../api/types";
 import { AGENT_LABELS } from "../lib/format";
 
 function newWebhook(): WebhookConfig {
@@ -28,9 +28,12 @@ export function SettingsView() {
   const refreshSettings = useStore((s) => s.refreshSettings);
   const refreshStatus = useStore((s) => s.refreshStatus);
   const refreshProjects = useStore((s) => s.refreshProjects);
+  const diagnosticsNonce = useStore((s) => s.diagnosticsNonce);
   const [draft, setDraft] = useState<Settings | null>(storeSettings);
   const [saved, setSaved] = useState(false);
   const [health, setHealth] = useState<Record<string, { available: boolean; version: string | null }>>({});
+  const [diags, setDiags] = useState<Diagnostic[] | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
   const [tests, setTests] = useState<Record<string, { ok: boolean; msg: string } | "sending">>({});
   const [configNotice, setConfigNotice] = useState<{ ok: boolean; msg: string } | null>(null);
   const [backupNotice, setBackupNotice] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -46,6 +49,19 @@ export function SettingsView() {
       setHealth(Object.fromEntries(hs.map((h) => [h.agent, { available: h.available, version: h.version }])));
     }).catch(() => {});
   useEffect(() => { loadHealth(); }, []);
+
+  const runDiagnostics = () => {
+    setDiagBusy(true);
+    api.diagnostics()
+      .then(setDiags)
+      .catch((e) => setDiags([{ category: "system", name: "diagnostics", level: "error", detail: String(e) }]))
+      .finally(() => setDiagBusy(false));
+  };
+
+  // The command palette can request a diagnostics run after navigating here.
+  useEffect(() => {
+    if (diagnosticsNonce > 0) runDiagnostics();
+  }, [diagnosticsNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportConfig = async () => {
     try {
@@ -434,6 +450,54 @@ export function SettingsView() {
             );
           })}
         </div>
+      </section>
+
+      <section className="card mt-5 p-4">
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-neutral-200">System diagnostics</h3>
+          <button className="btn !py-1" onClick={runDiagnostics} disabled={diagBusy}>
+            <Stethoscope size={13} /> {diagBusy ? "Checking…" : "Run diagnostics"}
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-neutral-500">
+          Checks agent CLIs, git, the database, and each project's configuration.
+        </p>
+        {diags === null ? (
+          <p className="text-xs text-neutral-600">Run diagnostics to check your environment.</p>
+        ) : diags.length === 0 ? (
+          <p className="text-xs text-emerald-400">No issues found.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {(() => {
+              const errors = diags.filter((d) => d.level === "error").length;
+              const warns = diags.filter((d) => d.level === "warn").length;
+              return (
+                <p className="mb-1 text-[11px] text-neutral-500">
+                  {errors > 0 && <span className="text-rose-400">{errors} error{errors === 1 ? "" : "s"}</span>}
+                  {errors > 0 && warns > 0 && " · "}
+                  {warns > 0 && <span className="text-amber-400">{warns} warning{warns === 1 ? "" : "s"}</span>}
+                  {errors === 0 && warns === 0 && <span className="text-emerald-400">All checks passed</span>}
+                </p>
+              );
+            })()}
+            {diags.map((d, i) => (
+              <div key={i} className="flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm">
+                {d.level === "ok" ? (
+                  <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-400" />
+                ) : d.level === "warn" ? (
+                  <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-400" />
+                ) : (
+                  <XCircle size={15} className="mt-0.5 shrink-0 text-rose-400" />
+                )}
+                <div className="min-w-0">
+                  <span className="text-neutral-200">{d.name}</span>
+                  <span className="text-[11px] text-neutral-600"> · {d.category}</span>
+                  <div className="text-xs text-neutral-400">{d.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="card mt-5 p-4">

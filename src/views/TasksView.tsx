@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, ListPlus } from "lucide-react";
+import { Plus, Search, ListPlus, Download } from "lucide-react";
 import { useStore } from "../store";
 import type { TaskStatus } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
@@ -52,6 +52,8 @@ export function TasksView() {
   const toggleTag = (tag: string) =>
     setActiveTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]));
 
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
+
   // Drop selected tags that no longer exist in scope (e.g. after a project switch)
   // so the user can never get stuck filtering on an unreachable, hidden chip.
   useEffect(() => {
@@ -76,6 +78,24 @@ export function TasksView() {
     });
   }, [tasks, projectFilter, statusFilter, search, activeTags]);
 
+  // Export the currently-filtered task list as CSV.
+  const exportCsv = () => {
+    const cols = ["title", "project", "status", "priority", "agent", "attempts", "maxAttempts", "tags", "createdAt", "updatedAt"] as const;
+    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const rows = filtered.map((t) =>
+      [t.title, projectName(t.projectId), t.status, String(t.priority), t.agent, String(t.attempts), String(t.maxAttempts), t.tags.join(" "), t.createdAt, t.updatedAt]
+        .map(esc)
+        .join(","),
+    );
+    const blob = new Blob([[cols.join(","), ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "orchestrator-tasks.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6">
       <div className="mb-5 flex items-center justify-between">
@@ -84,6 +104,9 @@ export function TasksView() {
           <p className="text-xs text-neutral-500">All work across every project.</p>
         </div>
         <div className="flex gap-2">
+          <button className="btn" onClick={exportCsv} disabled={filtered.length === 0} title="Export the filtered tasks as CSV">
+            <Download size={15} /> CSV
+          </button>
           <button className="btn" onClick={() => setBulkAdding(true)} disabled={projects.length === 0}>
             <ListPlus size={15} /> Bulk add
           </button>

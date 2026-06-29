@@ -41,6 +41,8 @@ interface StoreState {
   unread: number;
   /** Bumped to request the "New task" modal open (e.g. from the command palette). */
   newTaskNonce: number;
+  /** Bumped to request the Settings view run diagnostics (from the palette). */
+  diagnosticsNonce: number;
 
   init: () => Promise<void>;
   refreshStatus: () => Promise<void>;
@@ -53,6 +55,7 @@ interface StoreState {
   markActivityRead: () => void;
   clearLogs: () => void;
   requestNewTask: () => void;
+  requestDiagnostics: () => void;
   handleEvent: (event: OrchestratorEvent) => void;
 }
 
@@ -76,6 +79,7 @@ export const useStore = create<StoreState>((set, get) => ({
   activity: [],
   unread: 0,
   newTaskNonce: 0,
+  diagnosticsNonce: 0,
 
   init: async () => {
     if (get().initialized) return;
@@ -101,6 +105,7 @@ export const useStore = create<StoreState>((set, get) => ({
   markActivityRead: () => set({ unread: 0 }),
   clearLogs: () => set({ logs: [] }),
   requestNewTask: () => set({ newTaskNonce: get().newTaskNonce + 1 }),
+  requestDiagnostics: () => set({ diagnosticsNonce: get().diagnosticsNonce + 1 }),
 
   refreshAll: async () => {
     const [status, projects, tasks, timeline, settings, scheduled] = await Promise.all([

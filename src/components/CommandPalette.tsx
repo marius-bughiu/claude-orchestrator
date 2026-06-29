@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FolderGit2, ListTodo, Clock, GanttChartSquare, Settings as SettingsIcon,
-  Play, Pause, RefreshCw, Palette, Search, Terminal, Plus,
+  Play, Pause, RefreshCw, Palette, Search, Terminal, Plus, Stethoscope, Download,
 } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
@@ -26,6 +26,7 @@ export function CommandPalette() {
   const refreshStatus = useStore((s) => s.refreshStatus);
   const refreshScheduled = useStore((s) => s.refreshScheduled);
   const requestNewTask = useStore((s) => s.requestNewTask);
+  const requestDiagnostics = useStore((s) => s.requestDiagnostics);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
@@ -82,6 +83,29 @@ export function CommandPalette() {
         run: async () => { await api.refreshScheduled(); await refreshScheduled(); setOpen(false); },
       },
       {
+        id: "diagnostics",
+        label: "Run diagnostics",
+        hint: "settings",
+        icon: Stethoscope,
+        run: () => { navigate("/settings"); requestDiagnostics(); setOpen(false); },
+      },
+      {
+        id: "export-config",
+        label: "Export configuration",
+        hint: "download",
+        icon: Download,
+        run: async () => {
+          const bundle = await api.exportConfig();
+          const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "orchestrator-config.json";
+          a.click();
+          URL.revokeObjectURL(url);
+          setOpen(false);
+        },
+      },
+      {
         id: "theme",
         label: "Cycle theme (dark / light / system)",
         icon: Palette,
@@ -93,7 +117,7 @@ export function CommandPalette() {
         },
       },
     ];
-  }, [navigate, status, refreshStatus, refreshScheduled, requestNewTask]);
+  }, [navigate, status, refreshStatus, refreshScheduled, requestNewTask, requestDiagnostics]);
 
   // When the user types, also search across projects, tasks, and recent
   // sessions — so the palette doubles as global search, not just navigation.

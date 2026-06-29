@@ -204,6 +204,24 @@ try {
     await title.fill("Renamed task");
     assert.equal(await title.inputValue(), "Renamed task");
   });
+  await check("settings diagnostics renders findings", async () => {
+    await goto("/#/settings");
+    await page.getByRole("button", { name: /Run diagnostics/ }).click();
+    await seesText("writable");
+    await seesText("allows codex but its CLI isn't installed");
+  });
+  await check("command palette runs diagnostics", async () => {
+    await goto("/#/dashboard");
+    await page.keyboard.press("Control+k");
+    await page.getByRole("button", { name: /^Run diagnostics/ }).click();
+    // Navigates to settings and auto-runs — findings appear without clicking.
+    await seesText("available on PATH");
+  });
+  await check("tasks CSV export button is present", async () => {
+    await goto("/#/tasks");
+    await page.getByRole("button", { name: "CSV" }).waitFor({ state: "visible" });
+    assert.equal(await page.getByRole("button", { name: "CSV" }).isEnabled(), true);
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);
