@@ -25,17 +25,46 @@ export function TasksView() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [activeTags, setActiveTags] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [bulkAdding, setBulkAdding] = useState(false);
+  const newTaskNonce = useStore((s) => s.newTaskNonce);
 
   useEffect(() => {
     refreshAll();
   }, [refreshAll]);
 
+  // Open the create modal when the command palette (or anything) requests it.
+  useEffect(() => {
+    if (newTaskNonce > 0 && projects.length > 0) setCreating(true);
+  }, [newTaskNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // All tags present on tasks in the current project scope, sorted by frequency.
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of tasks) {
+      if (projectFilter !== "all" && t.projectId !== projectFilter) continue;
+      for (const tag of t.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [tasks, projectFilter]);
+
+  const toggleTag = (tag: string) =>
+    setActiveTags((cur) => (cur.includes(tag) ? cur.filter((t) => t !== tag) : [...cur, tag]));
+
+  // Drop selected tags that no longer exist in scope (e.g. after a project switch)
+  // so the user can never get stuck filtering on an unreachable, hidden chip.
+  useEffect(() => {
+    const present = new Set(tagCounts.map(([t]) => t));
+    setActiveTags((cur) => (cur.every((t) => present.has(t)) ? cur : cur.filter((t) => present.has(t))));
+  }, [tagCounts]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
       if (projectFilter !== "all" && t.projectId !== projectFilter) return false;
+      // A task must carry every selected tag (AND) to narrow the list.
+      if (activeTags.length && !activeTags.every((tag) => t.tags.includes(tag))) return false;
       if (q) {
         const hay = `${t.title} ${t.description} ${t.tags.join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -45,7 +74,7 @@ export function TasksView() {
         return ["pending", "queued", "running", "needs_review"].includes(t.status);
       return t.status === statusFilter;
     });
-  }, [tasks, projectFilter, statusFilter, search]);
+  }, [tasks, projectFilter, statusFilter, search, activeTags]);
 
   return (
     <div className="p-6">
@@ -96,6 +125,30 @@ export function TasksView() {
           ))}
         </div>
       </div>
+
+      {tagCounts.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-wide text-neutral-600">Tags</span>
+          {tagCounts.map(([tag, count]) => (
+            <button
+              key={tag}
+              className={`chip border ${
+                activeTags.includes(tag)
+                  ? "border-indigo-500/50 bg-indigo-600/15 text-indigo-200"
+                  : "border-[var(--color-border)] text-neutral-400 hover:text-neutral-200"
+              }`}
+              onClick={() => toggleTag(tag)}
+            >
+              {tag} <span className="text-neutral-600">{count}</span>
+            </button>
+          ))}
+          {activeTags.length > 0 && (
+            <button className="ml-1 text-[11px] text-neutral-500 hover:text-neutral-300" onClick={() => setActiveTags([])}>
+              clear
+            </button>
+          )}
+        </div>
+      )}
 
       {projects.length === 0 ? (
         <EmptyState title="No projects" hint="Add a project before creating tasks." />

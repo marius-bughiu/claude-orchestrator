@@ -39,6 +39,8 @@ interface StoreState {
   logs: LogLine[];
   activity: ActivityItem[];
   unread: number;
+  /** Bumped to request the "New task" modal open (e.g. from the command palette). */
+  newTaskNonce: number;
 
   init: () => Promise<void>;
   refreshStatus: () => Promise<void>;
@@ -50,6 +52,7 @@ interface StoreState {
   refreshAll: () => Promise<void>;
   markActivityRead: () => void;
   clearLogs: () => void;
+  requestNewTask: () => void;
   handleEvent: (event: OrchestratorEvent) => void;
 }
 
@@ -72,6 +75,7 @@ export const useStore = create<StoreState>((set, get) => ({
   logs: [],
   activity: [],
   unread: 0,
+  newTaskNonce: 0,
 
   init: async () => {
     if (get().initialized) return;
@@ -96,6 +100,7 @@ export const useStore = create<StoreState>((set, get) => ({
   refreshScheduled: async () => set({ scheduled: await api.listScheduled() }),
   markActivityRead: () => set({ unread: 0 }),
   clearLogs: () => set({ logs: [] }),
+  requestNewTask: () => set({ newTaskNonce: get().newTaskNonce + 1 }),
 
   refreshAll: async () => {
     const [status, projects, tasks, timeline, settings, scheduled] = await Promise.all([

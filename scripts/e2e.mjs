@@ -165,6 +165,38 @@ try {
     await input.fill(".mcp.json");
     assert.equal(await input.inputValue(), ".mcp.json");
   });
+  await check("create-task modal exposes tags + dependencies", async () => {
+    await goto("/#/tasks");
+    await page.getByRole("button", { name: "New task" }).click();
+    await seesText("Depends on");
+    await page.getByPlaceholder("comma or space separated, e.g. docs, ci").fill("ci");
+    await seesText("This task stays blocked until its prerequisites complete.");
+  });
+  await check("tag filter narrows the task list", async () => {
+    await goto("/#/tasks");
+    // The mock has a 'docs'-tagged task and a 'scheduled'-tagged one.
+    const docsTask = "Generate API docs from the command surface";
+    const otherTask = "Audit dependencies for vulnerabilities";
+    await seesText(docsTask);
+    await page.getByRole("button", { name: /^docs/ }).click();
+    await page.waitForTimeout(200);
+    await seesText(docsTask);
+    assert.equal(await page.getByText(otherTask, { exact: false }).count(), 0, "non-docs task should be filtered out");
+  });
+  await check("command palette can launch a new task", async () => {
+    await goto("/#/dashboard");
+    await page.keyboard.press("Control+k");
+    await page.getByRole("button", { name: /^New task/ }).click();
+    await seesText("Instructions / acceptance criteria");
+  });
+  await check("task title is editable inline", async () => {
+    await goto("/#/tasks/t1");
+    const title = page.locator('input[title="Click to rename"]');
+    await title.waitFor({ state: "visible" });
+    assert.equal(await title.inputValue(), "Add partial-message streaming to the session view");
+    await title.fill("Renamed task");
+    assert.equal(await title.inputValue(), "Renamed task");
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

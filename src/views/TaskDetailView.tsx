@@ -58,12 +58,13 @@ export function TaskDetailView() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [rollup, setRollup] = useState<{ sessions: number; totalCostUsd: number; totalTokens: number; totalDurationSecs: number } | null>(null);
   const [desc, setDesc] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
   const [saved, setSaved] = useState(false);
   const [addingDep, setAddingDep] = useState("");
 
   useEffect(() => {
     let active = true;
-    const loadTask = () => api.getTask(id).then((t) => { if (active) { setTask(t); setDesc(t.description); } }).catch(() => {});
+    const loadTask = () => api.getTask(id).then((t) => { if (active) { setTask(t); setDesc(t.description); setTitleDraft(t.title); } }).catch(() => {});
     const loadSessions = () => api.listSessions({ taskId: id }).then((s) => active && setSessions(s)).catch(() => {});
     const loadRollup = () => api.taskRollup(id).then((r) => active && setRollup(r)).catch(() => {});
     loadTask();
@@ -112,6 +113,11 @@ export function TaskDetailView() {
     setAddingDep("");
   };
   const removeDep = (depId: string) => patch({ dependsOn: task.dependsOn.filter((d) => d !== depId) });
+  const commitTitle = () => {
+    const next = titleDraft.trim();
+    if (!next || next === task.title) { setTitleDraft(task.title); return; }
+    patch({ title: next });
+  };
   const runNow = async () => { await api.runTaskNow(task.id); };
   const retry = async () => { await api.retryTask(task.id); };
   const clone = async () => { const t = await api.cloneTask(task.id); await refreshTasks(); navigate(`/tasks/${t.id}`); };
@@ -125,7 +131,17 @@ export function TaskDetailView() {
 
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold text-neutral-100">{task.title}</h1>
+          <input
+            className="w-full truncate rounded border border-transparent bg-transparent text-lg font-semibold text-neutral-100 outline-none hover:border-[var(--color-border)] focus:border-indigo-500/50 focus:bg-[var(--color-surface)] focus:px-2 focus:py-1"
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              else if (e.key === "Escape") { setTitleDraft(task.title); (e.target as HTMLInputElement).blur(); }
+            }}
+            title="Click to rename"
+          />
           {project && (
             <Link to={`/projects/${project.id}`} className="text-xs text-indigo-300 hover:underline">{project.name}</Link>
           )}

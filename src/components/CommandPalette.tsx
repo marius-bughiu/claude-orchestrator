@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, FolderGit2, ListTodo, Clock, GanttChartSquare, Settings as SettingsIcon,
-  Play, Pause, RefreshCw, Palette, Search, Terminal,
+  Play, Pause, RefreshCw, Palette, Search, Terminal, Plus,
 } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
@@ -25,6 +25,7 @@ export function CommandPalette() {
   const timeline = useStore((s) => s.timeline);
   const refreshStatus = useStore((s) => s.refreshStatus);
   const refreshScheduled = useStore((s) => s.refreshScheduled);
+  const requestNewTask = useStore((s) => s.requestNewTask);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
@@ -55,6 +56,13 @@ export function CommandPalette() {
     const go = (to: string) => () => { navigate(to); setOpen(false); };
     const running = status?.running;
     return [
+      {
+        id: "new-task",
+        label: "New task",
+        hint: "create",
+        icon: Plus,
+        run: () => { navigate("/tasks"); requestNewTask(); setOpen(false); },
+      },
       { id: "dash", label: "Go to Dashboard", icon: LayoutDashboard, run: go("/dashboard") },
       { id: "proj", label: "Go to Projects", icon: FolderGit2, run: go("/projects") },
       { id: "tasks", label: "Go to Tasks", icon: ListTodo, run: go("/tasks") },
@@ -85,7 +93,7 @@ export function CommandPalette() {
         },
       },
     ];
-  }, [navigate, status, refreshStatus, refreshScheduled]);
+  }, [navigate, status, refreshStatus, refreshScheduled, requestNewTask]);
 
   // When the user types, also search across projects, tasks, and recent
   // sessions — so the palette doubles as global search, not just navigation.
