@@ -79,8 +79,8 @@ window.__SHOT_MOCK__ = (() => {
   ];
 
   const settings = {
-    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600,
-    webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [] }],
+    running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000,
+    webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" }],
     agents: {
       claude: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: 25, tokenLimit: null }, windowHours: 5, enabled: true },
       gemini: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: null, tokenLimit: null }, windowHours: 5, enabled: true },

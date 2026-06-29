@@ -42,6 +42,7 @@ export function BoardView() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -53,13 +54,15 @@ export function BoardView() {
     [tasks, projectFilter],
   );
 
+  // Columns with their member tasks — shared by render and keyboard nav.
+  const columns = useMemo(
+    () => COLUMNS.map((c) => ({ ...c, items: visible.filter((t) => c.statuses.includes(t.status)) })),
+    [visible],
+  );
+
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? "";
 
-  async function moveTo(colKey: string) {
-    const task = tasks.find((t) => t.id === dragId);
-    setDragId(null);
-    setOverCol(null);
-    if (!task) return;
+  async function moveTask(task: Task, colKey: string) {
     const next = DROP_STATUS[colKey];
     if (!next || task.status === next) return;
     const updated: Task = { ...task, status: next };
@@ -69,12 +72,68 @@ export function BoardView() {
     await refreshTasks();
   }
 
+  async function moveTo(colKey: string) {
+    const task = tasks.find((t) => t.id === dragId);
+    setDragId(null);
+    setOverCol(null);
+    if (task) await moveTask(task, colKey);
+  }
+
+  // Default keyboard focus to the first card; keep it valid as tasks change.
+  useEffect(() => {
+    if (visible.length === 0) { setFocusedId(null); return; }
+    if (!focusedId || !visible.some((t) => t.id === focusedId)) {
+      setFocusedId(visible[0].id);
+    }
+  }, [visible, focusedId]);
+
+  // Keyboard triage: arrows navigate, digits 1–5 set status, Enter opens.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) return;
+      if (!focusedId) return;
+      // Locate the focused card within the columns grid.
+      let ci = -1, ri = -1;
+      columns.forEach((c, i) => {
+        const r = c.items.findIndex((t) => t.id === focusedId);
+        if (r >= 0) { ci = i; ri = r; }
+      });
+      if (ci < 0) return;
+      const focusAt = (c: number, r: number) => {
+        const col = columns[c];
+        if (!col || col.items.length === 0) return;
+        setFocusedId(col.items[Math.min(r, col.items.length - 1)].id);
+      };
+      const key = e.key;
+      if (key === "ArrowDown" || key === "j") { e.preventDefault(); focusAt(ci, ri + 1); }
+      else if (key === "ArrowUp" || key === "k") { e.preventDefault(); focusAt(ci, Math.max(0, ri - 1)); }
+      else if (key === "ArrowRight" || key === "l") {
+        e.preventDefault();
+        for (let c = ci + 1; c < columns.length; c++) if (columns[c].items.length) { focusAt(c, ri); break; }
+      } else if (key === "ArrowLeft" || key === "h") {
+        e.preventDefault();
+        for (let c = ci - 1; c >= 0; c--) if (columns[c].items.length) { focusAt(c, ri); break; }
+      } else if (key === "Enter") {
+        e.preventDefault();
+        navigate(`/tasks/${focusedId}`);
+      } else if (key >= "1" && key <= String(COLUMNS.length)) {
+        e.preventDefault();
+        const task = visible.find((t) => t.id === focusedId);
+        if (task) moveTask(task, COLUMNS[Number(key) - 1].key);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, focusedId, visible]);
+
   return (
     <div className="flex h-full flex-col p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-neutral-100">Board</h1>
-          <p className="text-xs text-neutral-500">Drag cards between columns to change status.</p>
+          <p className="text-xs text-neutral-500">Drag cards, or use the keyboard: <kbd className="kbd">↑↓←→</kbd> navigate · <kbd className="kbd">1–5</kbd> set status · <kbd className="kbd">⏎</kbd> open.</p>
         </div>
         <select className="input max-w-[220px]" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
           <option value="all">All projects</option>
@@ -88,8 +147,8 @@ export function BoardView() {
         <EmptyState title="No projects" hint="Add a project to see its tasks on the board." />
       ) : (
         <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">
-          {COLUMNS.map((col) => {
-            const items = visible.filter((t) => col.statuses.includes(t.status));
+          {columns.map((col, colIdx) => {
+            const items = col.items;
             return (
               <div
                 key={col.key}
@@ -104,7 +163,9 @@ export function BoardView() {
                 onDrop={() => moveTo(col.key)}
               >
                 <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-300">{col.label}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+                    <span className="mr-1 text-neutral-600">{colIdx + 1}</span>{col.label}
+                  </span>
                   <span className="chip border border-[var(--color-border)] text-neutral-400">{items.length}</span>
                 </div>
                 <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
@@ -120,10 +181,11 @@ export function BoardView() {
                         setDragId(null);
                         setOverCol(null);
                       }}
+                      onMouseEnter={() => setFocusedId(t.id)}
                       onClick={() => navigate(`/tasks/${t.id}`)}
-                      className={`cursor-pointer rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] p-2.5 text-sm transition hover:border-neutral-600 ${
-                        dragId === t.id ? "opacity-50" : ""
-                      }`}
+                      className={`cursor-pointer rounded-md border bg-[var(--color-bg)] p-2.5 text-sm transition ${
+                        focusedId === t.id ? "border-indigo-500 ring-1 ring-indigo-500/40" : "border-[var(--color-border)] hover:border-neutral-600"
+                      } ${dragId === t.id ? "opacity-50" : ""}`}
                     >
                       <div className="mb-1.5 line-clamp-2 font-medium text-neutral-200">{t.title}</div>
                       <div className="flex flex-wrap items-center gap-1.5">

@@ -313,6 +313,33 @@ fn activity_log_insert_and_scope() {
 }
 
 #[test]
+fn activity_log_prunes_to_retention() {
+    let db = Db::open_in_memory().unwrap();
+    db.upsert_project(&project("p1")).unwrap();
+    let now = Utc::now();
+    for i in 0..10 {
+        db.insert_activity(
+            "task",
+            "info",
+            &format!("msg {i}"),
+            Some("p1"),
+            None,
+            None,
+            now,
+        )
+        .unwrap();
+    }
+    assert_eq!(db.list_activity(100, None).unwrap().len(), 10);
+    let removed = db.prune_activity(4).unwrap();
+    assert_eq!(removed, 6);
+    let kept = db.list_activity(100, None).unwrap();
+    assert_eq!(kept.len(), 4);
+    // The newest are retained.
+    assert_eq!(kept[0].message, "msg 9");
+    assert_eq!(kept[3].message, "msg 6");
+}
+
+#[test]
 fn orphan_reconciliation() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();

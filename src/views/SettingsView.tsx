@@ -10,7 +10,7 @@ function newWebhook(): WebhookConfig {
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `wh-${Math.floor(Math.random() * 1e9)}`;
-  return { id, name: "New webhook", url: "", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [] };
+  return { id, name: "New webhook", url: "", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" };
 }
 
 const PERMISSION_MODES: { value: PermissionMode; label: string; hint: string }[] = [
@@ -157,6 +157,12 @@ export function SettingsView() {
         <p className="mt-2 text-[11px] text-neutral-500">
           Delay doubles each attempt: {draft.retryBaseSecs}s → {draft.retryBaseSecs * 2}s → {draft.retryBaseSecs * 4}s …, capped at {draft.retryMaxSecs}s.
         </p>
+        <label className="mt-4 block text-sm text-neutral-300">
+          <span className="mb-1 block text-xs text-neutral-400">Activity log retention (entries)</span>
+          <input type="number" min={1} className="input max-w-[200px]" value={draft.activityRetention}
+            onChange={(e) => set({ activityRetention: Math.max(1, Number(e.target.value)) })} />
+          <span className="mt-1 block text-[11px] text-neutral-500">Older activity entries are pruned beyond this count.</span>
+        </label>
       </section>
 
       <section className="card mb-5 p-4">
@@ -262,6 +268,19 @@ export function SettingsView() {
                       <p className="mt-1 text-[11px] text-neutral-600">No projects selected = fires for all.</p>
                     </div>
                   )}
+                  <div className="mt-2 border-t border-[var(--color-border)] pt-2">
+                    <div className="mb-1 text-[11px] text-neutral-500">Message template (optional)</div>
+                    <textarea
+                      className="input resize-y font-mono text-xs"
+                      rows={2}
+                      placeholder="{status}: {task} in {project}  ({link})"
+                      value={w.template}
+                      onChange={(e) => update({ template: e.target.value })}
+                    />
+                    <p className="mt-1 text-[11px] text-neutral-600">
+                      Placeholders: <code className="text-neutral-400">{"{event} {title} {body} {project} {task} {status} {link}"}</code>. Blank = default format.
+                    </p>
+                  </div>
                 </div>
               );
             })}

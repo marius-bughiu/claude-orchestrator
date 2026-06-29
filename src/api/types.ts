@@ -195,6 +195,7 @@ export interface Settings {
   retryEnabled: boolean;
   retryBaseSecs: number;
   retryMaxSecs: number;
+  activityRetention: number;
   webhooks: WebhookConfig[];
   agents: Record<string, AgentConfig>;
 }
@@ -274,6 +275,7 @@ export interface WebhookConfig {
   onTaskComplete: boolean;
   onTaskFail: boolean;
   projectIds: string[];
+  template: string;
 }
 
 export interface ActivityEntry {

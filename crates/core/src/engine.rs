@@ -1117,6 +1117,15 @@ impl Engine {
                 if let Some(pid) = &entry.project_id {
                     entry.project_name = self.db.get_project(pid).ok().map(|p| p.name);
                 }
+                // Bound the log occasionally rather than on every insert.
+                if entry.id % 200 == 0 {
+                    let keep = self
+                        .db
+                        .get_settings()
+                        .map(|s| s.activity_retention)
+                        .unwrap_or(2000);
+                    let _ = self.db.prune_activity(keep);
+                }
                 self.emit(OrchestratorEvent::Activity { entry });
             }
             Err(e) => tracing::debug!(target: "orchestrator", "activity insert failed: {e}"),
@@ -1130,19 +1139,13 @@ impl Engine {
 
     /// Fire any configured webhooks that want this event for the given project.
     /// Best-effort, async, fire-and-forget (failures are logged).
-    fn notify_webhooks(
-        &self,
-        event: &str,
-        project_id: &str,
-        title: &str,
-        body: &str,
-        link: Option<String>,
-    ) {
+    fn notify_webhooks(&self, project_id: &str, n: crate::webhook::Notification) {
+        let event = n.event.clone();
         let settings = self.db.get_settings().unwrap_or_default();
         let targets: Vec<_> = settings
             .webhooks
             .iter()
-            .filter(|w| crate::webhook::wants(w, event))
+            .filter(|w| crate::webhook::wants(w, &event))
             // Empty project list = all projects; otherwise must include this one.
             .filter(|w| w.project_ids.is_empty() || w.project_ids.iter().any(|p| p == project_id))
             .cloned()
@@ -1150,8 +1153,6 @@ impl Engine {
         if targets.is_empty() {
             return;
         }
-        let mut n = crate::webhook::Notification::new(event, title, body);
-        n.link = link;
         for cfg in targets {
             let cfg = cfg.clone();
             let n = n.clone();
@@ -1473,13 +1474,16 @@ impl Engine {
         // Outbound notifications + activity for terminal outcomes.
         match task.status {
             TaskStatus::Completed => {
-                self.notify_webhooks(
+                let mut n = crate::webhook::Notification::new(
                     "task_complete",
-                    &project.id,
-                    &format!("✅ Task completed: {}", task.title),
-                    &format!("Project {} — {} attempt(s)", project.name, task.attempts),
-                    self.db.get_session(&session.id).ok().and_then(|s| s.pr_url),
+                    format!("✅ Task completed: {}", task.title),
+                    format!("Project {} — {} attempt(s)", project.name, task.attempts),
                 );
+                n.link = self.db.get_session(&session.id).ok().and_then(|s| s.pr_url);
+                n.project = project.name.clone();
+                n.task = task.title.clone();
+                n.status = "completed".into();
+                self.notify_webhooks(&project.id, n);
                 self.record_activity(
                     "task",
                     "info",
@@ -1490,16 +1494,18 @@ impl Engine {
                 );
             }
             TaskStatus::Failed => {
-                self.notify_webhooks(
+                let mut n = crate::webhook::Notification::new(
                     "task_fail",
-                    &project.id,
-                    &format!("❌ Task failed: {}", task.title),
-                    &format!(
+                    format!("❌ Task failed: {}", task.title),
+                    format!(
                         "Project {} — gave up after {} attempt(s)",
                         project.name, task.attempts
                     ),
-                    None,
                 );
+                n.project = project.name.clone();
+                n.task = task.title.clone();
+                n.status = "failed".into();
+                self.notify_webhooks(&project.id, n);
                 self.record_activity(
                     "task",
                     "error",

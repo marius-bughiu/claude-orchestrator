@@ -739,6 +739,18 @@ impl Db {
         })
     }
 
+    /// Delete activity entries beyond the newest `keep`, bounding table growth.
+    /// Returns the number of rows removed.
+    pub fn prune_activity(&self, keep: u32) -> Result<u32> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "DELETE FROM activity_log
+             WHERE id NOT IN (SELECT id FROM activity_log ORDER BY id DESC LIMIT ?1)",
+            params![keep.max(1)],
+        )?;
+        Ok(n as u32)
+    }
+
     /// Most recent activity entries (newest first), optionally scoped to a project.
     pub fn list_activity(
         &self,

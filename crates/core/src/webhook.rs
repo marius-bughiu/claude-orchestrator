@@ -10,13 +10,19 @@ use std::process::Command;
 
 /// A notification to deliver. `event` is a stable key ("task_complete" /
 /// "task_fail"); `title` and `body` are human-readable.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Notification {
     pub event: String,
     pub title: String,
     pub body: String,
     /// Optional related link (e.g. a PR URL).
     pub link: Option<String>,
+    /// Project name (for templates).
+    pub project: String,
+    /// Task title (for templates).
+    pub task: String,
+    /// Task status (for templates), e.g. "completed" / "failed".
+    pub status: String,
 }
 
 impl Notification {
@@ -25,9 +31,21 @@ impl Notification {
             event: event.to_string(),
             title: title.into(),
             body: body.into(),
-            link: None,
+            ..Default::default()
         }
     }
+}
+
+/// Render a template by substituting `{key}` placeholders from the notification.
+fn render_template(template: &str, n: &Notification) -> String {
+    template
+        .replace("{event}", &n.event)
+        .replace("{title}", &n.title)
+        .replace("{body}", &n.body)
+        .replace("{project}", &n.project)
+        .replace("{task}", &n.task)
+        .replace("{status}", &n.status)
+        .replace("{link}", n.link.as_deref().unwrap_or(""))
 }
 
 /// True if this webhook wants the given event.
@@ -42,23 +60,33 @@ pub fn wants(cfg: &WebhookConfig, event: &str) -> bool {
     }
 }
 
-/// Build the JSON payload for a webhook target.
+/// Build the JSON payload for a webhook target. When the webhook has a custom
+/// template, the rendered text drives the message; otherwise a built-in format.
 pub fn payload(cfg: &WebhookConfig, n: &Notification) -> serde_json::Value {
-    let mut line = format!("{}: {}", n.title, n.body);
-    if let Some(link) = &n.link {
-        line.push_str(&format!("\n{link}"));
-    }
+    let line = if cfg.template.trim().is_empty() {
+        let mut l = format!("{}: {}", n.title, n.body);
+        if let Some(link) = &n.link {
+            l.push_str(&format!("\n{link}"));
+        }
+        l
+    } else {
+        render_template(&cfg.template, n)
+    };
     match cfg.kind.as_str() {
         // Slack incoming webhook.
         "slack" => serde_json::json!({ "text": line }),
         // Discord webhook.
         "discord" => serde_json::json!({ "content": line }),
-        // Generic: full structured payload.
+        // Generic: full structured payload, with the rendered message included.
         _ => serde_json::json!({
             "event": n.event,
             "title": n.title,
             "body": n.body,
+            "project": n.project,
+            "task": n.task,
+            "status": n.status,
             "link": n.link,
+            "message": line,
         }),
     }
 }
@@ -102,6 +130,7 @@ mod tests {
             on_task_complete: true,
             on_task_fail: false,
             project_ids: vec![],
+            template: String::new(),
         }
     }
 
@@ -114,6 +143,23 @@ mod tests {
             "Task done: Build green"
         );
         assert_eq!(payload(&cfg("generic"), &n)["event"], "task_complete");
+    }
+
+    #[test]
+    fn custom_template_is_rendered() {
+        let mut c = cfg("slack");
+        c.template = "[{project}] {task} → {status}".into();
+        let mut n = Notification::new("task_complete", "ignored", "ignored");
+        n.project = "web".into();
+        n.task = "Add auth".into();
+        n.status = "completed".into();
+        assert_eq!(payload(&c, &n)["text"], "[web] Add auth → completed");
+        // Generic includes the rendered message and structured fields.
+        let mut g = cfg("generic");
+        g.template = "{task}: {status}".into();
+        let p = payload(&g, &n);
+        assert_eq!(p["message"], "Add auth: completed");
+        assert_eq!(p["project"], "web");
     }
 
     #[test]

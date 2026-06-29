@@ -95,6 +95,10 @@ pub struct WebhookConfig {
     /// Restrict this webhook to specific projects. Empty = all projects.
     #[serde(default)]
     pub project_ids: Vec<String>,
+    /// Optional message template with `{event}`, `{title}`, `{body}`, `{project}`,
+    /// `{task}`, `{status}`, `{link}` placeholders. Empty = built-in format.
+    #[serde(default)]
+    pub template: String,
 }
 
 fn default_webhook_kind() -> String {
@@ -105,6 +109,9 @@ fn default_retry_base_secs() -> u64 {
 }
 fn default_retry_max_secs() -> u64 {
     3600
+}
+fn default_activity_retention() -> u32 {
+    2000
 }
 
 /// Global orchestrator settings.
@@ -163,6 +170,9 @@ pub struct Settings {
     /// Cap on the retry backoff, in seconds.
     #[serde(default = "default_retry_max_secs")]
     pub retry_max_secs: u64,
+    /// Maximum number of activity-log entries to retain; older ones are pruned.
+    #[serde(default = "default_activity_retention")]
+    pub activity_retention: u32,
     /// Outbound notification webhooks (Slack / Discord / generic).
     #[serde(default)]
     pub webhooks: Vec<WebhookConfig>,
@@ -195,6 +205,7 @@ impl Default for Settings {
             retry_enabled: true,
             retry_base_secs: 60,
             retry_max_secs: 3600,
+            activity_retention: 2000,
             webhooks: Vec::new(),
             agents,
         }
