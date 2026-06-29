@@ -4,7 +4,9 @@
 use crate::state::AppState;
 use orchestrator_core::config::{Settings, WebhookConfig};
 use orchestrator_core::models::*;
-use orchestrator_core::service::{self, AddProjectInput, BulkTaskInput, CreateTaskInput};
+use orchestrator_core::service::{
+    self, AddProjectInput, BulkTaskInput, ConfigBundle, CreateTaskInput, ImportResult,
+};
 use orchestrator_core::{conventions, SessionEvent};
 use tauri::State;
 
@@ -267,6 +269,30 @@ pub fn get_activity(
         .engine
         .activity(limit.unwrap_or(200), project_id.as_deref())
         .map_err(err)
+}
+
+#[tauri::command]
+pub fn task_rollup(state: State<AppState>, id: String) -> CmdResult<TaskRollup> {
+    state.engine.task_rollup(&id).map_err(err)
+}
+
+#[tauri::command]
+pub fn stuck_tasks(state: State<AppState>) -> CmdResult<Vec<StuckTask>> {
+    state.engine.stuck_tasks().map_err(err)
+}
+
+// ---- Config import/export --------------------------------------------------
+
+#[tauri::command]
+pub fn export_config(state: State<AppState>) -> CmdResult<ConfigBundle> {
+    service::export_config(state.engine.db()).map_err(err)
+}
+
+#[tauri::command]
+pub fn import_config(state: State<AppState>, bundle: ConfigBundle) -> CmdResult<ImportResult> {
+    let res = service::import_config(state.engine.db(), bundle).map_err(err)?;
+    state.engine.request_tick();
+    Ok(res)
 }
 
 // ---- Scheduled tasks -------------------------------------------------------

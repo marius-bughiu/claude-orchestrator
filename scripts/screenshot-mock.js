@@ -127,6 +127,13 @@ window.__TAURI_INTERNALS__ = {
       case "get_activity":
         return Promise.resolve(args.projectId ? m.activity.filter((a) => a.projectId === args.projectId) : m.activity);
       case "create_tasks_bulk": return Promise.resolve([]);
+      case "task_rollup": return Promise.resolve({ sessions: 3, totalCostUsd: 0.74, totalTokens: 284000, totalDurationSecs: 312 });
+      case "stuck_tasks": return Promise.resolve([
+        { task: m.tasks[2], reason: "many_retries", detail: "2 of 3 attempts used" },
+        { task: m.tasks[0], reason: "running_long", detail: "running for 22 min" },
+      ]);
+      case "export_config": return Promise.resolve({ version: 1, settings: m.settings, projects: m.projects });
+      case "import_config": return Promise.resolve({ projectsImported: 2, projectsSkipped: 0, settingsApplied: true });
       case "list_scheduled": return Promise.resolve(args.projectId ? m.scheduled.filter((s) => s.projectId === args.projectId) : m.scheduled);
       case "upcoming_tasks": return Promise.resolve(args.projectId ? m.upcoming.filter((u) => u.projectId === args.projectId) : m.upcoming);
       case "get_settings": return Promise.resolve(m.settings);

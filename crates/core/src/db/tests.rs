@@ -280,6 +280,46 @@ fn agent_stats_compares_agents() {
 }
 
 #[test]
+fn task_rollup_aggregates_sessions() {
+    let db = Db::open_in_memory().unwrap();
+    db.upsert_project(&project("p1")).unwrap();
+    db.upsert_task(&task("t1", "p1", TaskStatus::Completed, 50))
+        .unwrap();
+    let base = "2026-06-01T10:00:00Z".parse::<DateTime<Utc>>().unwrap();
+    let mk = |id: &str, cost: f64, tokens_in: u64, secs: i64| Session {
+        id: id.into(),
+        task_id: Some("t1".into()),
+        project_id: "p1".into(),
+        agent: AgentKind::Claude,
+        kind: SessionKind::Task,
+        status: SessionStatus::Completed,
+        agent_session_id: None,
+        model: None,
+        prompt: String::new(),
+        result_text: None,
+        error: None,
+        exit_code: None,
+        usage: TokenUsage {
+            input_tokens: tokens_in,
+            total_cost_usd: cost,
+            ..Default::default()
+        },
+        branch: None,
+        pr_url: None,
+        started_at: Some(base),
+        ended_at: Some(base + chrono::Duration::seconds(secs)),
+        created_at: base,
+    };
+    db.upsert_session(&mk("s1", 0.5, 100, 30)).unwrap();
+    db.upsert_session(&mk("s2", 0.25, 50, 10)).unwrap();
+    let r = db.task_rollup("t1").unwrap();
+    assert_eq!(r.sessions, 2);
+    assert!((r.total_cost_usd - 0.75).abs() < 1e-9);
+    assert_eq!(r.total_tokens, 150);
+    assert!((r.total_duration_secs - 40.0).abs() < 1e-9);
+}
+
+#[test]
 fn activity_log_insert_and_scope() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();

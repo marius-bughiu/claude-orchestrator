@@ -9,7 +9,11 @@ import type {
   AgentHealth,
   ActivityEntry,
   BranchInfo,
+  ConfigBundle,
+  ImportResult,
   RebaseResult,
+  StuckTask,
+  TaskRollup,
   OrchestratorEvent,
   OrchestratorStatus,
   GitStatus,
@@ -94,6 +98,13 @@ export const getTimeline = (limit?: number) =>
   invoke<TimelineItem[]>("get_timeline", { limit: limit ?? null });
 export const getActivity = (limit?: number, projectId?: string) =>
   invoke<ActivityEntry[]>("get_activity", { limit: limit ?? null, projectId: projectId ?? null });
+export const taskRollup = (id: string) => invoke<TaskRollup>("task_rollup", { id });
+export const stuckTasks = () => invoke<StuckTask[]>("stuck_tasks");
+
+// ---- Config import/export --------------------------------------------------
+export const exportConfig = () => invoke<ConfigBundle>("export_config");
+export const importConfig = (bundle: ConfigBundle) =>
+  invoke<ImportResult>("import_config", { bundle });
 
 // ---- Scheduled tasks -------------------------------------------------------
 export const listScheduled = (projectId?: string) =>

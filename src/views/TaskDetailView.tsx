@@ -6,7 +6,15 @@ import { useStore } from "../store";
 import type { Session, Task } from "../api/types";
 import { AgentBadge, PriorityBadge, TaskStatusBadge, SessionStatusBadge, SessionKindBadge } from "../components/Badges";
 import { SessionDiffPanel } from "../components/SessionDiffPanel";
-import { formatCost, formatRelative } from "../lib/format";
+import { formatCost, formatRelative, formatTokens } from "../lib/format";
+
+/// Format a duration given in seconds.
+function formatDuration2(secs: number): string {
+  if (secs < 60) return `${Math.round(secs)}s`;
+  const m = Math.floor(secs / 60);
+  if (m < 60) return `${m}m ${Math.round(secs % 60)}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
 
 const STATUS_DOT: Record<string, string> = {
   pending: "bg-neutral-400", queued: "bg-sky-400", running: "bg-sky-400",
@@ -48,6 +56,7 @@ export function TaskDetailView() {
   const refreshTasks = useStore((s) => s.refreshTasks);
   const [task, setTask] = useState<Task | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [rollup, setRollup] = useState<{ sessions: number; totalCostUsd: number; totalTokens: number; totalDurationSecs: number } | null>(null);
   const [desc, setDesc] = useState("");
   const [saved, setSaved] = useState(false);
   const [addingDep, setAddingDep] = useState("");
@@ -56,12 +65,14 @@ export function TaskDetailView() {
     let active = true;
     const loadTask = () => api.getTask(id).then((t) => { if (active) { setTask(t); setDesc(t.description); } }).catch(() => {});
     const loadSessions = () => api.listSessions({ taskId: id }).then((s) => active && setSessions(s)).catch(() => {});
+    const loadRollup = () => api.taskRollup(id).then((r) => active && setRollup(r)).catch(() => {});
     loadTask();
     loadSessions();
+    loadRollup();
     refreshTasks(); // ensure the store has sibling tasks for dependency editing
     const unlisten = api.onOrchestratorEvent((e) => {
       if (e.type === "taskUpdated" && e.task.id === id) { setTask(e.task); }
-      if (e.type === "sessionUpdated") loadSessions();
+      if (e.type === "sessionUpdated") { loadSessions(); loadRollup(); }
     });
     return () => { active = false; unlisten.then((u) => u()); };
   }, [id]);
@@ -211,7 +222,14 @@ export function TaskDetailView() {
         </div>
       )}
 
-      <h3 className="mb-2 text-sm font-semibold text-neutral-200">Sessions ({sessions.length})</h3>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-neutral-200">Sessions ({sessions.length})</h3>
+        {rollup && rollup.sessions > 0 && (
+          <span className="text-xs text-neutral-500">
+            · {formatCost(rollup.totalCostUsd)} · {formatTokens(rollup.totalTokens)} tokens · {formatDuration2(rollup.totalDurationSecs)}
+          </span>
+        )}
+      </div>
       <div className="flex flex-col gap-1.5">
         {sessions.length === 0 && <div className="text-sm text-neutral-500">No sessions have run for this task yet.</div>}
         {sessions.map((s) => (

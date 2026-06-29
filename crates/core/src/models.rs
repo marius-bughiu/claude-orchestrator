@@ -515,6 +515,27 @@ pub struct RebaseResult {
     pub detail: String,
 }
 
+/// Aggregated cost/time across all of a task's sessions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRollup {
+    pub sessions: u32,
+    pub total_cost_usd: f64,
+    pub total_tokens: u64,
+    /// Total wall-clock seconds across sessions that have both timestamps.
+    pub total_duration_secs: f64,
+}
+
+/// A task flagged as needing attention, with the reason it was flagged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StuckTask {
+    pub task: Task,
+    /// "running_long" | "many_retries".
+    pub reason: String,
+    pub detail: String,
+}
+
 /// A persisted, significant orchestrator event for the activity/audit history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

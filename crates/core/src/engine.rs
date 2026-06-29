@@ -1137,6 +1137,55 @@ impl Engine {
         self.db.list_activity(limit, project_id)
     }
 
+    /// Aggregated cost/time for a task across its sessions.
+    pub fn task_rollup(&self, task_id: &str) -> Result<TaskRollup> {
+        self.db.task_rollup(task_id)
+    }
+
+    /// Tasks that may need attention: a session running unusually long, or a
+    /// task the verifier keeps bouncing toward its attempt limit.
+    pub fn stuck_tasks(&self) -> Result<Vec<StuckTask>> {
+        let now = Utc::now();
+        const RUNNING_THRESHOLD_SECS: i64 = 900; // 15 minutes
+        let mut out: Vec<StuckTask> = Vec::new();
+
+        // Long-running active task sessions.
+        for s in self.db.active_sessions()? {
+            if s.kind != SessionKind::Task {
+                continue;
+            }
+            if let (Some(tid), Some(start)) = (s.task_id.clone(), s.started_at) {
+                let secs = (now - start).num_seconds();
+                if secs >= RUNNING_THRESHOLD_SECS {
+                    if let Ok(task) = self.db.get_task(&tid) {
+                        out.push(StuckTask {
+                            task,
+                            reason: "running_long".into(),
+                            detail: format!("running for {} min", secs / 60),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Tasks repeatedly bounced by the verifier, one attempt from failing.
+        for t in self.db.list_tasks(None)? {
+            if t.status == TaskStatus::NeedsReview
+                && t.max_attempts > 1
+                && t.attempts >= t.max_attempts - 1
+                && !out.iter().any(|s| s.task.id == t.id)
+            {
+                let detail = format!("{} of {} attempts used", t.attempts, t.max_attempts);
+                out.push(StuckTask {
+                    task: t,
+                    reason: "many_retries".into(),
+                    detail,
+                });
+            }
+        }
+        Ok(out)
+    }
+
     /// Send a sample notification to a webhook to verify it is reachable. Runs
     /// the delivery synchronously and surfaces any failure to the caller.
     pub fn test_webhook(&self, cfg: &crate::config::WebhookConfig) -> Result<()> {

@@ -9,6 +9,7 @@ import type { AgentKind, UsagePoint } from "../api/types";
 import { useStore } from "../store";
 import { formatCost, formatTokens, AGENT_LABELS } from "../lib/format";
 import { AgentComparison } from "../components/AgentComparison";
+import { NeedsAttention } from "../components/NeedsAttention";
 
 type Gran = "day" | "month" | "year";
 const GRANS: { label: string; value: Gran; limit: number }[] = [
@@ -153,6 +154,7 @@ export function DashboardView() {
         <StatCard icon={<PlayCircle size={20} />} label="Sessions" value={totals.sessions.toLocaleString()} />
       </div>
 
+      <NeedsAttention />
       <AgentComparison />
 
       {loading ? (

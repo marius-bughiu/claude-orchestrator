@@ -706,6 +706,38 @@ impl Db {
         Ok(())
     }
 
+    /// Aggregate cost, tokens, and duration across all of a task's sessions.
+    pub fn task_rollup(&self, task_id: &str) -> Result<TaskRollup> {
+        let conn = self.lock();
+        let mut stmt =
+            conn.prepare("SELECT usage, started_at, ended_at FROM sessions WHERE task_id = ?1")?;
+        let rows = stmt
+            .query_map(params![task_id], |r| {
+                let usage: TokenUsage =
+                    serde_json::from_str(&r.get::<_, String>(0)?).unwrap_or_default();
+                let started: Option<DateTime<Utc>> = r.get(1)?;
+                let ended: Option<DateTime<Utc>> = r.get(2)?;
+                let dur = match (started, ended) {
+                    (Some(s), Some(e)) => (e - s).num_milliseconds() as f64 / 1000.0,
+                    _ => 0.0,
+                };
+                let tokens = usage.input_tokens
+                    + usage.output_tokens
+                    + usage.cache_read_tokens
+                    + usage.cache_creation_tokens;
+                Ok((usage.total_cost_usd, tokens, dur))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut roll = TaskRollup::default();
+        for (cost, tokens, dur) in rows {
+            roll.sessions += 1;
+            roll.total_cost_usd += cost;
+            roll.total_tokens += tokens;
+            roll.total_duration_secs += dur;
+        }
+        Ok(roll)
+    }
+
     // ---- Activity log -------------------------------------------------------
 
     /// Record a significant event in the activity/audit history.

@@ -278,6 +278,31 @@ export interface WebhookConfig {
   template: string;
 }
 
+export interface TaskRollup {
+  sessions: number;
+  totalCostUsd: number;
+  totalTokens: number;
+  totalDurationSecs: number;
+}
+
+export interface StuckTask {
+  task: Task;
+  reason: string;
+  detail: string;
+}
+
+export interface ConfigBundle {
+  version: number;
+  settings: Settings;
+  projects: Project[];
+}
+
+export interface ImportResult {
+  projectsImported: number;
+  projectsSkipped: number;
+  settingsApplied: boolean;
+}
+
 export interface ActivityEntry {
   id: number;
   kind: string;

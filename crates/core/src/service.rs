@@ -1,12 +1,13 @@
 //! Higher-level operations used by the host (Tauri commands): project/task
 //! creation with validation and defaults, convention scaffolding, etc.
 
+use crate::config::Settings;
 use crate::conventions;
 use crate::db::Db;
 use crate::error::{CoreError, Result};
 use crate::models::*;
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -219,6 +220,61 @@ pub fn create_tasks_bulk(db: &Db, input: BulkTaskInput) -> Result<Vec<Task>> {
     Ok(created)
 }
 
+/// A portable snapshot of the orchestrator's configuration: global settings and
+/// the managed projects. Excludes tasks/sessions/usage (runtime state).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigBundle {
+    #[serde(default = "default_bundle_version")]
+    pub version: u32,
+    pub settings: Settings,
+    pub projects: Vec<Project>,
+}
+
+fn default_bundle_version() -> u32 {
+    1
+}
+
+/// Result of importing a config bundle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub projects_imported: u32,
+    pub projects_skipped: u32,
+    pub settings_applied: bool,
+}
+
+/// Export the current settings + projects as a portable bundle.
+pub fn export_config(db: &Db) -> Result<ConfigBundle> {
+    Ok(ConfigBundle {
+        version: 1,
+        settings: db.get_settings()?,
+        projects: db.list_projects()?,
+    })
+}
+
+/// Apply a config bundle: replace settings and upsert projects. Projects whose
+/// path collides with a *different* existing project are skipped (not clobbered).
+pub fn import_config(db: &Db, bundle: ConfigBundle) -> Result<ImportResult> {
+    db.save_settings(&bundle.settings)?;
+    let existing = db.list_projects()?;
+    let mut imported = 0;
+    let mut skipped = 0;
+    for p in bundle.projects {
+        if existing.iter().any(|e| e.path == p.path && e.id != p.id) {
+            skipped += 1;
+            continue;
+        }
+        db.upsert_project(&p)?;
+        imported += 1;
+    }
+    Ok(ImportResult {
+        projects_imported: imported,
+        projects_skipped: skipped,
+        settings_applied: true,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,6 +341,44 @@ mod tests {
         .unwrap();
         assert_eq!(task.priority, 100);
         assert_eq!(task.agent, AgentKind::Claude);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn config_export_import_roundtrip() {
+        let db = Db::open_in_memory().unwrap();
+        let dir = std::env::temp_dir().join(format!("orch-cfg-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        add_project(
+            &db,
+            AddProjectInput {
+                path: dir.to_string_lossy().into_owned(),
+                name: Some("demo".into()),
+                description: None,
+                scaffold: false,
+            },
+        )
+        .unwrap();
+        let mut s = db.get_settings().unwrap();
+        s.max_concurrent = 9;
+        db.save_settings(&s).unwrap();
+
+        let bundle = export_config(&db).unwrap();
+        assert_eq!(bundle.projects.len(), 1);
+        assert_eq!(bundle.settings.max_concurrent, 9);
+
+        // Import into a fresh DB reproduces settings + projects.
+        let db2 = Db::open_in_memory().unwrap();
+        let res = import_config(&db2, bundle).unwrap();
+        assert_eq!(res.projects_imported, 1);
+        assert!(res.settings_applied);
+        assert_eq!(db2.get_settings().unwrap().max_concurrent, 9);
+        assert_eq!(db2.list_projects().unwrap().len(), 1);
+
+        // Re-importing skips the path collision rather than duplicating.
+        let bundle2 = export_config(&db).unwrap();
+        let res2 = import_config(&db2, bundle2).unwrap();
+        assert_eq!(res2.projects_imported, 1); // same id -> upsert, not skipped
         std::fs::remove_dir_all(&dir).ok();
     }
 

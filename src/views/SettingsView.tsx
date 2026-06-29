@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Save, AlertTriangle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
@@ -27,10 +27,13 @@ export function SettingsView() {
   const projects = useStore((s) => s.projects);
   const refreshSettings = useStore((s) => s.refreshSettings);
   const refreshStatus = useStore((s) => s.refreshStatus);
+  const refreshProjects = useStore((s) => s.refreshProjects);
   const [draft, setDraft] = useState<Settings | null>(storeSettings);
   const [saved, setSaved] = useState(false);
   const [health, setHealth] = useState<Record<string, { available: boolean; version: string | null }>>({});
   const [tests, setTests] = useState<Record<string, { ok: boolean; msg: string } | "sending">>({});
+  const [configNotice, setConfigNotice] = useState<{ ok: boolean; msg: string } | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!storeSettings) refreshSettings();
@@ -42,6 +45,36 @@ export function SettingsView() {
       setHealth(Object.fromEntries(hs.map((h) => [h.agent, { available: h.available, version: h.version }])));
     }).catch(() => {});
   useEffect(() => { loadHealth(); }, []);
+
+  const exportConfig = async () => {
+    try {
+      const bundle = await api.exportConfig();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "orchestrator-config.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      setConfigNotice({ ok: true, msg: "Exported." });
+    } catch (e) {
+      setConfigNotice({ ok: false, msg: String(e) });
+    }
+  };
+  const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const bundle = JSON.parse(await file.text());
+      const res = await api.importConfig(bundle);
+      await refreshSettings();
+      await refreshProjects();
+      await refreshStatus();
+      setConfigNotice({ ok: true, msg: `Imported ${res.projectsImported} project(s)${res.projectsSkipped ? `, skipped ${res.projectsSkipped}` : ""}.` });
+    } catch (err) {
+      setConfigNotice({ ok: false, msg: `Import failed: ${err}` });
+    }
+  };
 
   if (!draft) return <div className="p-6 text-sm text-neutral-500">Loading settings…</div>;
 
@@ -389,6 +422,27 @@ export function SettingsView() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      <section className="card mt-5 p-4">
+        <h3 className="mb-1 text-sm font-semibold text-neutral-200">Import / export configuration</h3>
+        <p className="mb-3 text-xs text-neutral-500">
+          Move your settings and projects between machines as a portable JSON file. Tasks and history are not included.
+        </p>
+        <div className="flex items-center gap-2">
+          <button className="btn" onClick={exportConfig}>Export config</button>
+          <button className="btn" onClick={() => importFileRef.current?.click()}>Import config</button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onImportFile}
+          />
+          {configNotice && (
+            <span className={`text-xs ${configNotice.ok ? "text-emerald-400" : "text-rose-400"}`}>{configNotice.msg}</span>
+          )}
         </div>
       </section>
     </div>
