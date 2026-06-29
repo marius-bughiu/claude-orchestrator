@@ -22,26 +22,33 @@ const mock = readFileSync(join(__dirname, "screenshot-mock.js"), "utf8");
 const port = Number(process.env.PORT || 4178);
 const base = `http://localhost:${port}`;
 
-/** Spawn `vite preview` and resolve once it answers, or reject on timeout. */
-function startServer() {
+/** Spawn `vite preview` and resolve once it actually serves HTTP. We poll the
+ *  endpoint rather than sniff stdout — the banner's wording/buffering varies by
+ *  Vite version and across `pnpm exec`, and a missed string would hang CI. */
+async function startServer() {
   const proc = spawn(
     "pnpm",
     ["exec", "vite", "preview", "--port", String(port), "--strictPort"],
     { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
   );
-  return new Promise((resolve, reject) => {
-    const deadline = setTimeout(() => reject(new Error("preview server did not start in 30s")), 30_000);
-    const onData = (b) => {
-      if (b.toString().includes(`localhost:${port}`)) {
-        clearTimeout(deadline);
-        proc.stdout.off("data", onData);
-        resolve(proc);
-      }
-    };
-    proc.stdout.on("data", onData);
-    proc.stderr.on("data", (b) => process.env.E2E_DEBUG && process.stderr.write(b));
-    proc.on("exit", (code) => reject(new Error(`preview server exited early (code ${code})`)));
-  });
+  proc.stdout.on("data", (b) => process.env.E2E_DEBUG && process.stdout.write(b));
+  proc.stderr.on("data", (b) => process.env.E2E_DEBUG && process.stderr.write(b));
+  let exited = null;
+  proc.on("exit", (code) => { exited = code; });
+
+  const deadline = Date.now() + 40_000;
+  while (Date.now() < deadline) {
+    if (exited !== null) throw new Error(`preview server exited early (code ${exited})`);
+    try {
+      const res = await fetch(base, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) return proc;
+    } catch {
+      // not up yet — keep polling
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  proc.kill("SIGTERM");
+  throw new Error("preview server did not answer HTTP within 40s");
 }
 
 let passed = 0;
