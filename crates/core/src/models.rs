@@ -515,6 +515,23 @@ pub struct RebaseResult {
     pub detail: String,
 }
 
+/// A persisted, significant orchestrator event for the activity/audit history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityEntry {
+    pub id: i64,
+    /// Category: "task" | "scheduled" | "roadmap" | "github" | "pr" | "branch".
+    pub kind: String,
+    /// "info" | "warn" | "error".
+    pub level: String,
+    pub message: String,
+    pub project_id: Option<String>,
+    pub project_name: Option<String>,
+    pub task_id: Option<String>,
+    pub session_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
 /// A project's accumulated memory: auto-generated context and learned lessons.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

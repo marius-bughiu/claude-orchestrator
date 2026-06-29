@@ -92,6 +92,9 @@ pub struct WebhookConfig {
     /// Fire when a task fails (exhausted retries / unrecoverable error).
     #[serde(default = "default_true")]
     pub on_task_fail: bool,
+    /// Restrict this webhook to specific projects. Empty = all projects.
+    #[serde(default)]
+    pub project_ids: Vec<String>,
 }
 
 fn default_webhook_kind() -> String {

@@ -149,9 +149,90 @@ pub fn create_task(db: &Db, input: CreateTaskInput) -> Result<Task> {
     Ok(task)
 }
 
+/// Input for creating many tasks at once from a pasted list.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkTaskInput {
+    pub project_id: String,
+    /// Raw text — one task per line, markdown checklist/bullet markers stripped.
+    pub text: String,
+    #[serde(default)]
+    pub priority: Option<i64>,
+    #[serde(default)]
+    pub agent: Option<AgentKind>,
+}
+
+/// Parse pasted text into task titles: one per non-empty line, stripping common
+/// markdown list/checklist markers (`- [ ]`, `- [x]`, `-`, `*`, `1.`). Markdown
+/// headings (`#`) and blank lines are skipped.
+pub fn parse_bulk_titles(text: &str) -> Vec<String> {
+    let mut titles = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // Strip a leading bullet marker (`-`, `*`, including a bare one).
+        let mut s = line.trim_start_matches(['-', '*']).trim_start();
+        // Strip an ordered-list marker like "12. ".
+        if let Some(pos) = s.find(". ") {
+            if !s[..pos].is_empty() && s[..pos].chars().all(|c| c.is_ascii_digit()) {
+                s = s[pos + 2..].trim_start();
+            }
+        }
+        // Strip a checklist box: "[ ] foo" / "[x] foo".
+        if s.starts_with("[ ]") || s.starts_with("[x]") || s.starts_with("[X]") {
+            s = s[3..].trim_start();
+        }
+        let title = s.trim();
+        if !title.is_empty() {
+            titles.push(title.to_string());
+        }
+    }
+    titles
+}
+
+/// Create one pending task per line of `input.text`. Returns the created tasks.
+pub fn create_tasks_bulk(db: &Db, input: BulkTaskInput) -> Result<Vec<Task>> {
+    let titles = parse_bulk_titles(&input.text);
+    if titles.is_empty() {
+        return Err(CoreError::invalid("no task lines found in the pasted text"));
+    }
+    let mut created = Vec::new();
+    for title in titles {
+        let task = create_task(
+            db,
+            CreateTaskInput {
+                project_id: input.project_id.clone(),
+                title,
+                description: String::new(),
+                priority: input.priority,
+                agent: input.agent,
+                model: None,
+                depends_on: vec![],
+                tags: vec!["bulk".into()],
+                max_attempts: None,
+            },
+        )?;
+        created.push(task);
+    }
+    Ok(created)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_bulk_titles_with_markers() {
+        let text =
+            "# Heading\n- [ ] First task\n- [x] Second\n* Third\n3. Fourth\nPlain line\n\n   \n- ";
+        let titles = parse_bulk_titles(text);
+        assert_eq!(
+            titles,
+            vec!["First task", "Second", "Third", "Fourth", "Plain line"]
+        );
+    }
 
     #[test]
     fn add_project_rejects_nonexistent_path() {
@@ -204,6 +285,51 @@ mod tests {
         .unwrap();
         assert_eq!(task.priority, 100);
         assert_eq!(task.agent, AgentKind::Claude);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bulk_create_makes_one_task_per_line() {
+        let db = Db::open_in_memory().unwrap();
+        let dir = std::env::temp_dir().join(format!("orch-bulk-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let project = add_project(
+            &db,
+            AddProjectInput {
+                path: dir.to_string_lossy().into_owned(),
+                name: Some("demo".into()),
+                description: None,
+                scaffold: false,
+            },
+        )
+        .unwrap();
+        let created = create_tasks_bulk(
+            &db,
+            BulkTaskInput {
+                project_id: project.id.clone(),
+                text: "- [ ] Alpha\n- Beta\n\n1. Gamma".into(),
+                priority: Some(70),
+                agent: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(created.len(), 3);
+        assert_eq!(created[0].title, "Alpha");
+        assert!(created
+            .iter()
+            .all(|t| t.priority == 70 && t.tags.contains(&"bulk".to_string())));
+        assert_eq!(db.list_tasks(Some(&project.id)).unwrap().len(), 3);
+        // Empty text is rejected.
+        assert!(create_tasks_bulk(
+            &db,
+            BulkTaskInput {
+                project_id: project.id,
+                text: "  \n#only heading".into(),
+                priority: None,
+                agent: None
+            },
+        )
+        .is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

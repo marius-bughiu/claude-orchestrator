@@ -101,6 +101,7 @@ mod tests {
             enabled: true,
             on_task_complete: true,
             on_task_fail: false,
+            project_ids: vec![],
         }
     }
 

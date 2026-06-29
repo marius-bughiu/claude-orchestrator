@@ -706,6 +706,76 @@ impl Db {
         Ok(())
     }
 
+    // ---- Activity log -------------------------------------------------------
+
+    /// Record a significant event in the activity/audit history.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_activity(
+        &self,
+        kind: &str,
+        level: &str,
+        message: &str,
+        project_id: Option<&str>,
+        task_id: Option<&str>,
+        session_id: Option<&str>,
+        created_at: DateTime<Utc>,
+    ) -> Result<ActivityEntry> {
+        let conn = self.lock();
+        conn.execute(
+            "INSERT INTO activity_log (kind, level, message, project_id, task_id, session_id, created_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![kind, level, message, project_id, task_id, session_id, created_at],
+        )?;
+        Ok(ActivityEntry {
+            id: conn.last_insert_rowid(),
+            kind: kind.to_string(),
+            level: level.to_string(),
+            message: message.to_string(),
+            project_id: project_id.map(String::from),
+            project_name: None,
+            task_id: task_id.map(String::from),
+            session_id: session_id.map(String::from),
+            created_at,
+        })
+    }
+
+    /// Most recent activity entries (newest first), optionally scoped to a project.
+    pub fn list_activity(
+        &self,
+        limit: u32,
+        project_id: Option<&str>,
+    ) -> Result<Vec<ActivityEntry>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(
+            "SELECT a.id, a.kind, a.level, a.message, a.project_id, p.name,
+                    a.task_id, a.session_id, a.created_at
+             FROM activity_log a
+             LEFT JOIN projects p ON p.id = a.project_id
+             WHERE (:project IS NULL OR a.project_id = :project)
+             ORDER BY a.id DESC
+             LIMIT :limit",
+        )?;
+        let rows = stmt
+            .query_map(
+                rusqlite::named_params! { ":project": project_id, ":limit": limit },
+                |r| {
+                    Ok(ActivityEntry {
+                        id: r.get(0)?,
+                        kind: r.get(1)?,
+                        level: r.get(2)?,
+                        message: r.get(3)?,
+                        project_id: r.get(4)?,
+                        project_name: r.get(5)?,
+                        task_id: r.get(6)?,
+                        session_id: r.get(7)?,
+                        created_at: r.get(8)?,
+                    })
+                },
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     // ---- Timeline -----------------------------------------------------------
 
     pub fn timeline(&self, limit: u32) -> Result<Vec<TimelineItem>> {

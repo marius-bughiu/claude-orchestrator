@@ -123,3 +123,16 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_project ON scheduled_tasks(project_id);
+
+CREATE TABLE IF NOT EXISTS activity_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL,
+    level       TEXT NOT NULL DEFAULT 'info',
+    message     TEXT NOT NULL,
+    project_id  TEXT,
+    task_id     TEXT,
+    session_id  TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_time ON activity_log(created_at);

@@ -120,18 +120,12 @@ export const useStore = create<StoreState>((set, get) => ({
         if (idx >= 0) tasks[idx] = event.task;
         else tasks.unshift(event.task);
         set({ tasks });
-        // Notify + record activity on a real completion/failure transition.
+        // Desktop notification on a real completion/failure transition. The
+        // activity feed is fed by the separate `activity` event.
         const t = event.task;
         const becameDone = (t.status === "completed" || t.status === "failed") && prev?.status !== t.status;
-        if (becameDone) {
-          if (get().settings?.notificationsEnabled !== false) {
-            notify(t.status === "completed" ? "Task completed" : "Task failed", t.title);
-          }
-          pushActivity(get, set, {
-            kind: "task",
-            level: t.status === "completed" ? "info" : "error",
-            message: `Task ${t.status}: ${t.title}`,
-          });
+        if (becameDone && get().settings?.notificationsEnabled !== false) {
+          notify(t.status === "completed" ? "Task completed" : "Task failed", t.title);
         }
         break;
       }
@@ -142,6 +136,14 @@ export const useStore = create<StoreState>((set, get) => ({
         break;
       case "scheduledChanged":
         get().refreshScheduled();
+        break;
+      case "activity":
+        // Surface persisted activity in the in-memory feed / unread bell too.
+        pushActivity(get, set, {
+          kind: event.entry.kind === "scheduled" ? "scheduled" : event.entry.kind === "task" ? "task" : "log",
+          level: event.entry.level,
+          message: event.entry.message,
+        });
         break;
       case "log": {
         const logs = [

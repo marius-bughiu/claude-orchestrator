@@ -8,6 +8,7 @@ import { TaskDetailView } from "./views/TaskDetailView";
 import { BoardView } from "./views/BoardView";
 import { DependencyGraphView } from "./views/DependencyGraphView";
 import { PullRequestsView } from "./views/PullRequestsView";
+import { ActivityView } from "./views/ActivityView";
 import { ScheduledView } from "./views/ScheduledView";
 import { DashboardView } from "./views/DashboardView";
 import { TimelineView } from "./views/TimelineView";
@@ -31,6 +32,7 @@ const router = createHashRouter([
       { path: "pulls", element: <PullRequestsView /> },
       { path: "scheduled", element: <ScheduledView /> },
       { path: "timeline", element: <TimelineView /> },
+      { path: "activity", element: <ActivityView /> },
       { path: "sessions/:id", element: <SessionDetailView /> },
       { path: "settings", element: <SettingsView /> },
     ],

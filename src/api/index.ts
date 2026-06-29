@@ -7,6 +7,7 @@ import type {
   CreateTaskInput,
   AgentStat,
   AgentHealth,
+  ActivityEntry,
   BranchInfo,
   RebaseResult,
   OrchestratorEvent,
@@ -49,6 +50,12 @@ export const listTasks = (projectId?: string) =>
 export const getTask = (id: string) => invoke<Task>("get_task", { id });
 export const createTask = (input: CreateTaskInput) =>
   invoke<Task>("create_task", { input });
+export const createTasksBulk = (input: {
+  projectId: string;
+  text: string;
+  priority?: number;
+  agent?: string;
+}) => invoke<Task[]>("create_tasks_bulk", { input });
 export const updateTask = (task: Task) => invoke<void>("update_task", { task });
 export const deleteTask = (id: string) => invoke<void>("delete_task", { id });
 export const runTaskNow = (id: string) => invoke<void>("run_task_now", { id });
@@ -82,6 +89,8 @@ export const triggerRoadmap = (projectId: string) =>
   invoke<void>("trigger_roadmap", { projectId });
 export const getTimeline = (limit?: number) =>
   invoke<TimelineItem[]>("get_timeline", { limit: limit ?? null });
+export const getActivity = (limit?: number, projectId?: string) =>
+  invoke<ActivityEntry[]>("get_activity", { limit: limit ?? null, projectId: projectId ?? null });
 
 // ---- Scheduled tasks -------------------------------------------------------
 export const listScheduled = (projectId?: string) =>

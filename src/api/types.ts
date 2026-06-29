@@ -273,6 +273,19 @@ export interface WebhookConfig {
   enabled: boolean;
   onTaskComplete: boolean;
   onTaskFail: boolean;
+  projectIds: string[];
+}
+
+export interface ActivityEntry {
+  id: number;
+  kind: string;
+  level: string;
+  message: string;
+  projectId: string | null;
+  projectName: string | null;
+  taskId: string | null;
+  sessionId: string | null;
+  createdAt: string;
 }
 
 export interface ScheduledTask {
@@ -358,4 +371,5 @@ export type OrchestratorEvent =
   | { type: "statusChanged" }
   | { type: "scheduledChanged" }
   | { type: "usageUpdated" }
+  | { type: "activity"; entry: ActivityEntry }
   | { type: "log"; level: string; message: string };

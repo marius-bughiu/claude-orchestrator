@@ -10,7 +10,7 @@ function newWebhook(): WebhookConfig {
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `wh-${Math.floor(Math.random() * 1e9)}`;
-  return { id, name: "New webhook", url: "", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true };
+  return { id, name: "New webhook", url: "", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [] };
 }
 
 const PERMISSION_MODES: { value: PermissionMode; label: string; hint: string }[] = [
@@ -24,6 +24,7 @@ const AGENTS: AgentKind[] = ["claude", "gemini", "codex"];
 
 export function SettingsView() {
   const storeSettings = useStore((s) => s.settings);
+  const projects = useStore((s) => s.projects);
   const refreshSettings = useStore((s) => s.refreshSettings);
   const refreshStatus = useStore((s) => s.refreshStatus);
   const [draft, setDraft] = useState<Settings | null>(storeSettings);
@@ -238,6 +239,29 @@ export function SettingsView() {
                       On task fail
                     </label>
                   </div>
+                  {projects.length > 0 && (
+                    <div className="mt-2 border-t border-[var(--color-border)] pt-2">
+                      <div className="mb-1 text-[11px] text-neutral-500">
+                        Projects {w.projectIds.length === 0 ? "(all)" : `(${w.projectIds.length})`}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {projects.map((p) => {
+                          const on = w.projectIds.includes(p.id);
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => update({ projectIds: on ? w.projectIds.filter((x) => x !== p.id) : [...w.projectIds, p.id] })}
+                              className={`chip border ${on ? "border-indigo-500/50 bg-indigo-600/15 text-indigo-200" : "border-[var(--color-border)] text-neutral-500 hover:text-neutral-300"}`}
+                            >
+                              {p.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1 text-[11px] text-neutral-600">No projects selected = fires for all.</p>
+                    </div>
+                  )}
                 </div>
               );
             })}

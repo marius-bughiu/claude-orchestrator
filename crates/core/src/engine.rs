@@ -554,10 +554,19 @@ impl Engine {
                 updated_at: now,
             };
             self.db.upsert_task(&task)?;
+            let task_id = task.id.clone();
             self.emit(OrchestratorEvent::TaskUpdated { task });
             self.log(
                 "info",
                 format!("scheduled task '{}' fired for {}", st.title, project.name),
+            );
+            self.record_activity(
+                "scheduled",
+                "info",
+                format!("Scheduled task fired: {}", st.title),
+                Some(&project.id),
+                Some(&task_id),
+                None,
             );
             fired += 1;
         }
@@ -898,6 +907,14 @@ impl Engine {
                 "info",
                 format!("imported {created} GitHub issue(s) for {}", project.name),
             );
+            self.record_activity(
+                "github",
+                "info",
+                format!("Imported {created} GitHub issue(s)"),
+                Some(&project.id),
+                None,
+                None,
+            );
             self.request_tick();
         }
         Ok(created)
@@ -1007,6 +1024,19 @@ impl Engine {
         let project = self.db.get_project(project_id)?;
         let result = worktree::rebase_onto_base(Path::new(&project.path), branch)?;
         self.log("info", format!("rebase {branch}: {}", result.detail));
+        let level = if result.status == "conflicts" || result.status == "error" {
+            "warn"
+        } else {
+            "info"
+        };
+        self.record_activity(
+            "branch",
+            level,
+            format!("Rebase {branch}: {}", result.detail),
+            Some(&project.id),
+            None,
+            None,
+        );
         Ok(result)
     }
 
@@ -1051,17 +1081,70 @@ impl Engine {
         let project = self.db.get_project(project_id)?;
         crate::github::merge_pr(&project.path, number)?;
         self.log("info", format!("merged PR #{number} in {}", project.name));
+        self.record_activity(
+            "pr",
+            "info",
+            format!("Merged PR #{number}"),
+            Some(&project.id),
+            None,
+            None,
+        );
         Ok(())
     }
 
-    /// Fire any configured webhooks that want this event. Best-effort, async,
-    /// fire-and-forget (delivery runs on a blocking thread; failures are logged).
-    fn notify_webhooks(&self, event: &str, title: &str, body: &str, link: Option<String>) {
+    /// Record a significant event in the persisted activity history and emit it
+    /// so live views update. Best-effort — never fails the caller.
+    fn record_activity(
+        &self,
+        kind: &str,
+        level: &str,
+        message: impl Into<String>,
+        project_id: Option<&str>,
+        task_id: Option<&str>,
+        session_id: Option<&str>,
+    ) {
+        let message = message.into();
+        match self.db.insert_activity(
+            kind,
+            level,
+            &message,
+            project_id,
+            task_id,
+            session_id,
+            Utc::now(),
+        ) {
+            Ok(mut entry) => {
+                if let Some(pid) = &entry.project_id {
+                    entry.project_name = self.db.get_project(pid).ok().map(|p| p.name);
+                }
+                self.emit(OrchestratorEvent::Activity { entry });
+            }
+            Err(e) => tracing::debug!(target: "orchestrator", "activity insert failed: {e}"),
+        }
+    }
+
+    /// Read the activity/audit history, optionally scoped to a project.
+    pub fn activity(&self, limit: u32, project_id: Option<&str>) -> Result<Vec<ActivityEntry>> {
+        self.db.list_activity(limit, project_id)
+    }
+
+    /// Fire any configured webhooks that want this event for the given project.
+    /// Best-effort, async, fire-and-forget (failures are logged).
+    fn notify_webhooks(
+        &self,
+        event: &str,
+        project_id: &str,
+        title: &str,
+        body: &str,
+        link: Option<String>,
+    ) {
         let settings = self.db.get_settings().unwrap_or_default();
         let targets: Vec<_> = settings
             .webhooks
             .iter()
             .filter(|w| crate::webhook::wants(w, event))
+            // Empty project list = all projects; otherwise must include this one.
+            .filter(|w| w.project_ids.is_empty() || w.project_ids.iter().any(|p| p == project_id))
             .cloned()
             .collect();
         if targets.is_empty() {
@@ -1387,23 +1470,45 @@ impl Engine {
         // Commit / PR / clean up the worktree (no-op when not isolated).
         self.finalize_worktree(&project, session, &task, completed);
 
-        // Outbound notifications for terminal outcomes.
+        // Outbound notifications + activity for terminal outcomes.
         match task.status {
-            TaskStatus::Completed => self.notify_webhooks(
-                "task_complete",
-                &format!("✅ Task completed: {}", task.title),
-                &format!("Project {} — {} attempt(s)", project.name, task.attempts),
-                self.db.get_session(&session.id).ok().and_then(|s| s.pr_url),
-            ),
-            TaskStatus::Failed => self.notify_webhooks(
-                "task_fail",
-                &format!("❌ Task failed: {}", task.title),
-                &format!(
-                    "Project {} — gave up after {} attempt(s)",
-                    project.name, task.attempts
-                ),
-                None,
-            ),
+            TaskStatus::Completed => {
+                self.notify_webhooks(
+                    "task_complete",
+                    &project.id,
+                    &format!("✅ Task completed: {}", task.title),
+                    &format!("Project {} — {} attempt(s)", project.name, task.attempts),
+                    self.db.get_session(&session.id).ok().and_then(|s| s.pr_url),
+                );
+                self.record_activity(
+                    "task",
+                    "info",
+                    format!("Completed: {}", task.title),
+                    Some(&project.id),
+                    Some(&task.id),
+                    Some(&session.id),
+                );
+            }
+            TaskStatus::Failed => {
+                self.notify_webhooks(
+                    "task_fail",
+                    &project.id,
+                    &format!("❌ Task failed: {}", task.title),
+                    &format!(
+                        "Project {} — gave up after {} attempt(s)",
+                        project.name, task.attempts
+                    ),
+                    None,
+                );
+                self.record_activity(
+                    "task",
+                    "error",
+                    format!("Failed after {} attempt(s): {}", task.attempts, task.title),
+                    Some(&project.id),
+                    Some(&task.id),
+                    Some(&session.id),
+                );
+            }
             _ => {}
         }
 
@@ -1559,6 +1664,16 @@ impl Engine {
             "info",
             format!("roadmap created {created} task(s) for {}", project.name),
         );
+        if created > 0 {
+            self.record_activity(
+                "roadmap",
+                "info",
+                format!("Roadmap generated {created} task(s)"),
+                Some(&project.id),
+                None,
+                Some(&session.id),
+            );
+        }
         Ok(())
     }
 }

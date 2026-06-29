@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import clsx from "clsx";
-import { LayoutDashboard, FolderGit2, ListTodo, KanbanSquare, Workflow, GitPullRequest, GanttChartSquare, Clock, Settings as SettingsIcon } from "lucide-react";
+import { LayoutDashboard, FolderGit2, ListTodo, KanbanSquare, Workflow, GitPullRequest, GanttChartSquare, Activity, Clock, Settings as SettingsIcon } from "lucide-react";
 import { UsageBar } from "./UsageBar";
 import { UpdateBanner } from "./UpdateBanner";
 import { UsageAlertBanner } from "./UsageAlertBanner";
@@ -19,6 +19,7 @@ const NAV = [
   { to: "/pulls", label: "Pull requests", icon: GitPullRequest },
   { to: "/scheduled", label: "Scheduled", icon: Clock },
   { to: "/timeline", label: "Timeline", icon: GanttChartSquare },
+  { to: "/activity", label: "Activity", icon: Activity },
   { to: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

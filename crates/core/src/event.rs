@@ -4,7 +4,7 @@
 //! [`EventSink`]. The Tauri layer implements `EventSink` by forwarding to the
 //! webview; tests can implement it with a channel.
 
-use crate::models::{Session, SessionEvent, Task};
+use crate::models::{ActivityEntry, Session, SessionEvent, Task};
 use serde::Serialize;
 
 /// A structured event the front-end can react to. Serialized as
@@ -36,6 +36,8 @@ pub enum OrchestratorEvent {
     ScheduledChanged,
     /// Usage totals changed; the UI should refresh the header.
     UsageUpdated,
+    /// A significant event was recorded in the persisted activity history.
+    Activity { entry: ActivityEntry },
     /// Free-form log line for the activity feed.
     Log { level: String, message: String },
 }

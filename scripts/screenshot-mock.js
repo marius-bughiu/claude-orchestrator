@@ -80,7 +80,7 @@ window.__SHOT_MOCK__ = (() => {
 
   const settings = {
     running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600,
-    webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true }],
+    webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [] }],
     agents: {
       claude: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: 25, tokenLimit: null }, windowHours: 5, enabled: true },
       gemini: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: null, tokenLimit: null }, windowHours: 5, enabled: true },
@@ -98,7 +98,17 @@ window.__SHOT_MOCK__ = (() => {
     { id: 6, sessionId: "s1", kind: "assistant", text: "I'll add a partials buffer keyed by message id and flush on message stop.", data: null, createdAt: iso(-150e3) },
   ];
 
-  return { projects, tasks, status, timeline, scheduled, upcoming, settings, session, sessionEvents, daySeries, monthSeries, yearSeries };
+  const activity = [
+    { id: 9, kind: "task", level: "info", message: "Completed: Add partial-message streaming to the session view", projectId: "p1", projectName: "claude-orchestrator", taskId: "t1", sessionId: "s1", createdAt: iso(-300e3) },
+    { id: 8, kind: "pr", level: "info", message: "Merged PR #42", projectId: "p1", projectName: "claude-orchestrator", taskId: null, sessionId: null, createdAt: iso(-900e3) },
+    { id: 7, kind: "task", level: "error", message: "Failed after 3 attempt(s): Fix flaky pagination test", projectId: "p2", projectName: "web-dashboard", taskId: "t5", sessionId: "s5", createdAt: iso(-3800e3) },
+    { id: 6, kind: "roadmap", level: "info", message: "Roadmap generated 4 task(s)", projectId: "p1", projectName: "claude-orchestrator", taskId: null, sessionId: "s3", createdAt: iso(-2300e3) },
+    { id: 5, kind: "scheduled", level: "info", message: "Scheduled task fired: Weekly dependency audit", projectId: "p1", projectName: "claude-orchestrator", taskId: "t8", sessionId: null, createdAt: iso(-5000e3) },
+    { id: 4, kind: "branch", level: "warn", message: "Rebase orchestrator/fix-scheduler-99aa: rebase onto main hit conflicts; resolve manually", projectId: "p1", projectName: "claude-orchestrator", taskId: null, sessionId: null, createdAt: iso(-8.7e7) },
+    { id: 3, kind: "github", level: "info", message: "Imported 5 GitHub issue(s)", projectId: "p2", projectName: "web-dashboard", taskId: null, sessionId: null, createdAt: iso(-9.1e7) },
+  ];
+
+  return { projects, tasks, status, timeline, scheduled, upcoming, settings, session, sessionEvents, daySeries, monthSeries, yearSeries, activity };
 })();
 
 window.__TAURI_INTERNALS__ = {
@@ -114,6 +124,9 @@ window.__TAURI_INTERNALS__ = {
       case "list_tasks": return Promise.resolve(args.projectId ? m.tasks.filter((t) => t.projectId === args.projectId) : m.tasks);
       case "get_task": return Promise.resolve(find(m.tasks, args.id));
       case "get_timeline": return Promise.resolve(m.timeline);
+      case "get_activity":
+        return Promise.resolve(args.projectId ? m.activity.filter((a) => a.projectId === args.projectId) : m.activity);
+      case "create_tasks_bulk": return Promise.resolve([]);
       case "list_scheduled": return Promise.resolve(args.projectId ? m.scheduled.filter((s) => s.projectId === args.projectId) : m.scheduled);
       case "upcoming_tasks": return Promise.resolve(args.projectId ? m.upcoming.filter((u) => u.projectId === args.projectId) : m.upcoming);
       case "get_settings": return Promise.resolve(m.settings);

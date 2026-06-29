@@ -19,6 +19,7 @@ const routes = [
   ["pulls", "/#/pulls"],
   ["scheduled", "/#/scheduled"],
   ["timeline", "/#/timeline"],
+  ["activity", "/#/activity"],
   ["settings", "/#/settings"],
   ["session-detail", "/#/sessions/s1"],
 ];

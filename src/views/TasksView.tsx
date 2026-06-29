@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, ListPlus } from "lucide-react";
 import { useStore } from "../store";
 import type { TaskStatus } from "../api/types";
 import { TaskTable } from "../components/TaskTable";
 import { CreateTaskModal } from "../components/CreateTaskModal";
+import { BulkTaskModal } from "../components/BulkTaskModal";
 import { UpcomingTasks } from "../components/UpcomingTasks";
 import { EmptyState } from "../components/Modal";
 
@@ -25,6 +26,7 @@ export function TasksView() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [bulkAdding, setBulkAdding] = useState(false);
 
   useEffect(() => {
     refreshAll();
@@ -52,9 +54,14 @@ export function TasksView() {
           <h1 className="text-lg font-semibold text-neutral-100">Tasks</h1>
           <p className="text-xs text-neutral-500">All work across every project.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setCreating(true)} disabled={projects.length === 0}>
-          <Plus size={15} /> New task
-        </button>
+        <div className="flex gap-2">
+          <button className="btn" onClick={() => setBulkAdding(true)} disabled={projects.length === 0}>
+            <ListPlus size={15} /> Bulk add
+          </button>
+          <button className="btn btn-primary" onClick={() => setCreating(true)} disabled={projects.length === 0}>
+            <Plus size={15} /> New task
+          </button>
+        </div>
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -103,6 +110,7 @@ export function TasksView() {
       )}
 
       {creating && <CreateTaskModal onClose={() => setCreating(false)} />}
+      {bulkAdding && <BulkTaskModal onClose={() => setBulkAdding(false)} />}
     </div>
   );
 }

@@ -280,6 +280,39 @@ fn agent_stats_compares_agents() {
 }
 
 #[test]
+fn activity_log_insert_and_scope() {
+    let db = Db::open_in_memory().unwrap();
+    db.upsert_project(&project("p1")).unwrap();
+    db.upsert_project(&project("p2")).unwrap();
+    let now = Utc::now();
+    db.insert_activity("task", "info", "Completed: A", Some("p1"), None, None, now)
+        .unwrap();
+    db.insert_activity("pr", "info", "Merged PR #1", Some("p2"), None, None, now)
+        .unwrap();
+    db.insert_activity(
+        "github",
+        "info",
+        "Imported 3 issues",
+        Some("p1"),
+        None,
+        None,
+        now,
+    )
+    .unwrap();
+
+    let all = db.list_activity(50, None).unwrap();
+    assert_eq!(all.len(), 3);
+    // Newest first.
+    assert_eq!(all[0].message, "Imported 3 issues");
+    // Project name is joined in.
+    assert_eq!(all[0].project_name.as_deref(), Some("proj-p1"));
+
+    let p1 = db.list_activity(50, Some("p1")).unwrap();
+    assert_eq!(p1.len(), 2);
+    assert!(p1.iter().all(|e| e.project_id.as_deref() == Some("p1")));
+}
+
+#[test]
 fn orphan_reconciliation() {
     let db = Db::open_in_memory().unwrap();
     db.upsert_project(&project("p1")).unwrap();

@@ -4,7 +4,7 @@
 use crate::state::AppState;
 use orchestrator_core::config::Settings;
 use orchestrator_core::models::*;
-use orchestrator_core::service::{self, AddProjectInput, CreateTaskInput};
+use orchestrator_core::service::{self, AddProjectInput, BulkTaskInput, CreateTaskInput};
 use orchestrator_core::{conventions, SessionEvent};
 use tauri::State;
 
@@ -128,6 +128,14 @@ pub fn retry_task(state: State<AppState>, id: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// Create many tasks at once from a pasted markdown/checklist block.
+#[tauri::command]
+pub fn create_tasks_bulk(state: State<AppState>, input: BulkTaskInput) -> CmdResult<Vec<Task>> {
+    let tasks = service::create_tasks_bulk(state.engine.db(), input).map_err(err)?;
+    state.engine.request_tick();
+    Ok(tasks)
+}
+
 /// Duplicate a task as a fresh pending task in the same project.
 #[tauri::command]
 pub fn clone_task(state: State<AppState>, id: String) -> CmdResult<Task> {
@@ -241,6 +249,18 @@ pub fn get_timeline(state: State<AppState>, limit: Option<u32>) -> CmdResult<Vec
         .engine
         .db()
         .timeline(limit.unwrap_or(200))
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn get_activity(
+    state: State<AppState>,
+    limit: Option<u32>,
+    project_id: Option<String>,
+) -> CmdResult<Vec<ActivityEntry>> {
+    state
+        .engine
+        .activity(limit.unwrap_or(200), project_id.as_deref())
         .map_err(err)
 }
 
