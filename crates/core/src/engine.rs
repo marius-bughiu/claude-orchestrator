@@ -1514,8 +1514,10 @@ impl Engine {
             }
         }
 
+        let all_tasks = self.db.list_tasks(None)?;
+
         // Tasks repeatedly bounced by the verifier, one attempt from failing.
-        for t in self.db.list_tasks(None)? {
+        for t in &all_tasks {
             if t.status == TaskStatus::NeedsReview
                 && t.max_attempts > 1
                 && t.attempts >= t.max_attempts - 1
@@ -1523,13 +1525,83 @@ impl Engine {
             {
                 let detail = format!("{} of {} attempts used", t.attempts, t.max_attempts);
                 out.push(StuckTask {
-                    task: t,
+                    task: t.clone(),
                     reason: "many_retries".into(),
                     detail,
                 });
             }
         }
+
+        // Dependency problems: a waiting task whose prerequisite was deleted, or
+        // one trapped in a dependency cycle, will never become schedulable and is
+        // otherwise invisible — surface both.
+        let ids: std::collections::HashSet<&str> =
+            all_tasks.iter().map(|t| t.id.as_str()).collect();
+        let dep_map: HashMap<&str, &Vec<String>> = all_tasks
+            .iter()
+            .map(|t| (t.id.as_str(), &t.depends_on))
+            .collect();
+        for t in &all_tasks {
+            // Only tasks still waiting to run can be stuck this way.
+            if matches!(
+                t.status,
+                TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Cancelled
+            ) || out.iter().any(|s| s.task.id == t.id)
+            {
+                continue;
+            }
+            let missing: Vec<&str> = t
+                .depends_on
+                .iter()
+                .map(|d| d.as_str())
+                .filter(|d| !ids.contains(d))
+                .collect();
+            if !missing.is_empty() {
+                out.push(StuckTask {
+                    task: t.clone(),
+                    reason: "missing_dependency".into(),
+                    detail: format!("{} prerequisite(s) no longer exist", missing.len()),
+                });
+            } else if dep_reaches(&t.id, &t.id, &dep_map) {
+                out.push(StuckTask {
+                    task: t.clone(),
+                    reason: "dependency_cycle".into(),
+                    detail: "part of a dependency cycle — it can never start".into(),
+                });
+            }
+        }
         Ok(out)
+    }
+
+    /// Validate a task's dependency list before persisting a user edit: each
+    /// prerequisite must exist, the task may not depend on itself, and the edit
+    /// may not introduce a cycle.
+    pub fn validate_task_deps(&self, task: &Task) -> Result<()> {
+        if task.depends_on.is_empty() {
+            return Ok(());
+        }
+        let all = self.db.list_tasks(None)?;
+        let ids: std::collections::HashSet<&str> = all.iter().map(|t| t.id.as_str()).collect();
+        for dep in &task.depends_on {
+            if dep == &task.id {
+                return Err(CoreError::invalid("a task cannot depend on itself"));
+            }
+            if !ids.contains(dep.as_str()) {
+                return Err(CoreError::invalid(
+                    "that prerequisite task no longer exists",
+                ));
+            }
+        }
+        // Build the graph with this task's *proposed* deps applied, then check
+        // whether the task is reachable from itself (i.e. a cycle).
+        let proposed = task.depends_on.clone();
+        let mut dep_map: HashMap<&str, &Vec<String>> =
+            all.iter().map(|t| (t.id.as_str(), &t.depends_on)).collect();
+        dep_map.insert(task.id.as_str(), &proposed);
+        if dep_reaches(&task.id, &task.id, &dep_map) {
+            return Err(CoreError::invalid("that dependency would create a cycle"));
+        }
+        Ok(())
     }
 
     /// Send a sample notification to a webhook to verify it is reachable. Runs
@@ -2118,6 +2190,29 @@ fn prune_backups(dir: &Path, keep: usize) {
     }
 }
 
+/// True if `target` is reachable by following dependency edges out of `start`.
+/// With `start == target` this answers "is `start` part of a cycle?". The graph
+/// is `task_id -> depends_on`; unknown ids are simply leaves.
+fn dep_reaches(start: &str, target: &str, dep_map: &HashMap<&str, &Vec<String>>) -> bool {
+    let mut stack: Vec<&str> = Vec::new();
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    if let Some(deps) = dep_map.get(start) {
+        stack.extend(deps.iter().map(|d| d.as_str()));
+    }
+    while let Some(cur) = stack.pop() {
+        if cur == target {
+            return true;
+        }
+        if !seen.insert(cur) {
+            continue;
+        }
+        if let Some(deps) = dep_map.get(cur) {
+            stack.extend(deps.iter().map(|d| d.as_str()));
+        }
+    }
+    false
+}
+
 /// Round-robin slot allocation: given each project's available capacity and the
 /// number of free global slots, return the order in which projects should each
 /// start one task at a time. Slots are shared one-per-project-per-round so no
@@ -2456,6 +2551,66 @@ mod tests {
         assert_eq!(q.len(), 2);
         assert_eq!(q[0].task.title, "high");
         assert_eq!(q[0].project_name, "p");
+    }
+
+    #[test]
+    fn stuck_tasks_flags_cycles_and_missing_deps() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        // A 2-cycle: a depends on b, b depends on a.
+        let mut a = mk_task(&p.id, AgentKind::Claude, false);
+        let mut b = mk_task(&p.id, AgentKind::Claude, false);
+        a.depends_on = vec![b.id.clone()];
+        b.depends_on = vec![a.id.clone()];
+        eng.db.upsert_task(&a).unwrap();
+        eng.db.upsert_task(&b).unwrap();
+        // A task pointing at a non-existent prerequisite.
+        let mut orphan = mk_task(&p.id, AgentKind::Claude, false);
+        orphan.depends_on = vec!["ghost-id".into()];
+        eng.db.upsert_task(&orphan).unwrap();
+
+        let stuck = eng.stuck_tasks().unwrap();
+        assert_eq!(
+            stuck
+                .iter()
+                .filter(|s| s.reason == "dependency_cycle")
+                .count(),
+            2
+        );
+        assert!(stuck
+            .iter()
+            .any(|s| s.reason == "missing_dependency" && s.task.id == orphan.id));
+    }
+
+    #[test]
+    fn validate_task_deps_rejects_cycles_and_self() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let a = mk_task(&p.id, AgentKind::Claude, false);
+        let mut b = mk_task(&p.id, AgentKind::Claude, false);
+        b.depends_on = vec![a.id.clone()];
+        eng.db.upsert_task(&a).unwrap();
+        eng.db.upsert_task(&b).unwrap();
+
+        // a depends on b would close the loop a->b->a.
+        let mut a_cycle = a.clone();
+        a_cycle.depends_on = vec![b.id.clone()];
+        assert!(eng.validate_task_deps(&a_cycle).is_err());
+
+        // Self-dependency is rejected.
+        let mut a_self = a.clone();
+        a_self.depends_on = vec![a.id.clone()];
+        assert!(eng.validate_task_deps(&a_self).is_err());
+
+        // A missing prerequisite is rejected.
+        let mut a_missing = a.clone();
+        a_missing.depends_on = vec!["nope".into()];
+        assert!(eng.validate_task_deps(&a_missing).is_err());
+
+        // A valid forward dependency is accepted.
+        let mut a_ok = a.clone();
+        a_ok.depends_on = vec![];
+        assert!(eng.validate_task_deps(&a_ok).is_ok());
     }
 
     #[test]

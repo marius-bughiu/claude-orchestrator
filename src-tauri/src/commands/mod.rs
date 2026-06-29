@@ -93,6 +93,8 @@ pub fn create_task(state: State<AppState>, input: CreateTaskInput) -> CmdResult<
 #[tauri::command]
 pub fn update_task(state: State<AppState>, task: Task) -> CmdResult<()> {
     let mut task = task;
+    // Reject self-deps, missing prerequisites, and dependency cycles.
+    state.engine.validate_task_deps(&task).map_err(err)?;
     task.updated_at = chrono::Utc::now();
     state.engine.db().upsert_task(&task).map_err(err)?;
     state.engine.request_tick();

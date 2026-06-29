@@ -63,6 +63,7 @@ export function TaskDetailView() {
   const [saved, setSaved] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
   const [addingDep, setAddingDep] = useState("");
+  const [depError, setDepError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -116,7 +117,16 @@ export function TaskDetailView() {
   };
   const addDep = async (depId: string) => {
     if (!depId || task.dependsOn.includes(depId)) return;
-    await patch({ dependsOn: [...task.dependsOn, depId] });
+    const next = { ...task, dependsOn: [...task.dependsOn, depId] };
+    try {
+      await api.updateTask(next); // validated server-side: rejects cycles/missing
+      setTask(next);
+      await refreshTasks();
+      setDepError(null);
+    } catch (e) {
+      // e.g. "that dependency would create a cycle" — keep state unchanged.
+      setDepError(String(e).replace(/^Error:\s*/, ""));
+    }
     setAddingDep("");
   };
   const removeDep = (depId: string) => patch({ dependsOn: task.dependsOn.filter((d) => d !== depId) });
@@ -252,6 +262,7 @@ export function TaskDetailView() {
             </select>
             <Plus size={14} className="text-neutral-600" />
           </div>
+          {depError && <p className="mt-1.5 text-xs text-rose-400">{depError}</p>}
         </div>
 
         <div className="card p-4">

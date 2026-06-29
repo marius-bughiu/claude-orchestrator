@@ -153,6 +153,8 @@ window.__TAURI_INTERNALS__ = {
       case "stuck_tasks": return Promise.resolve([
         { task: m.tasks[2], reason: "many_retries", detail: "2 of 3 attempts used" },
         { task: m.tasks[0], reason: "running_long", detail: "running for 22 min" },
+        { task: m.tasks[5], reason: "dependency_cycle", detail: "part of a dependency cycle — it can never start" },
+        { task: m.tasks[6], reason: "missing_dependency", detail: "1 prerequisite(s) no longer exist" },
       ]);
       case "export_config": return Promise.resolve({ version: 1, settings: m.settings, projects: m.projects });
       case "import_config": return Promise.resolve({ projectsImported: 2, projectsSkipped: 0, settingsApplied: true });

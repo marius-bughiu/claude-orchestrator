@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Clock, RefreshCcw } from "lucide-react";
+import { AlertTriangle, Clock, RefreshCcw, GitFork, Unlink } from "lucide-react";
 import * as api from "../api";
 import type { StuckTask } from "../api/types";
 
 const REASON: Record<string, { icon: typeof Clock; label: string }> = {
   running_long: { icon: Clock, label: "running long" },
   many_retries: { icon: RefreshCcw, label: "repeated retries" },
+  dependency_cycle: { icon: GitFork, label: "dependency cycle" },
+  missing_dependency: { icon: Unlink, label: "missing prerequisite" },
 };
 
 /// Surfaces tasks that may need a human: long-running sessions or tasks the

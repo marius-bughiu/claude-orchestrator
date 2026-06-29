@@ -290,6 +290,12 @@ try {
     await page.locator('label:has-text("Quiet hours") input[type="checkbox"]').check();
     await seesText("desktop notifications muted in this window");
   });
+  await check("needs-attention surfaces dependency problems", async () => {
+    await goto("/#/dashboard");
+    await seesText("Needs attention");
+    await seesText("dependency cycle");
+    await seesText("missing prerequisite");
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);
