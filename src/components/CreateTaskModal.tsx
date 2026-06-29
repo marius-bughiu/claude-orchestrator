@@ -1,10 +1,16 @@
 import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { X, BookmarkPlus } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
-import type { AgentKind } from "../api/types";
+import type { AgentKind, TaskTemplate } from "../api/types";
 import { Modal } from "./Modal";
 import { ModelInput } from "./ModelInput";
+
+function uuid(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `tmpl-${Math.floor(Math.random() * 1e9)}`;
+}
 
 /// Split a free-form tag string ("docs, ci urgent") into a clean, de-duped list.
 function parseTags(raw: string): string[] {
@@ -33,7 +39,9 @@ export function CreateTaskModal({
 }) {
   const projects = useStore((s) => s.projects);
   const allTasks = useStore((s) => s.tasks);
+  const settings = useStore((s) => s.settings);
   const refreshTasks = useStore((s) => s.refreshTasks);
+  const refreshSettings = useStore((s) => s.refreshSettings);
   const [pid, setPid] = useState(projectId ?? projects[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -53,6 +61,31 @@ export function CreateTaskModal({
   // Candidate prerequisites: other tasks in the same project.
   const siblingTasks = useMemo(() => allTasks.filter((t) => t.projectId === pid), [allTasks, pid]);
   const depTitle = (id: string) => siblingTasks.find((t) => t.id === id)?.title ?? id;
+
+  const templates = settings?.taskTemplates ?? [];
+  const applyTemplate = (t: TaskTemplate) => {
+    if (t.title) setTitle(t.title);
+    if (t.description) setDescription(t.description);
+    setPriority(t.priority);
+    setAgent(t.agent && allowedAgents.includes(t.agent) ? t.agent : "");
+    setTags(t.tags.join(", "));
+  };
+  const saveAsTemplate = async () => {
+    if (!settings) return;
+    const name = window.prompt("Template name", title.trim() || "New template");
+    if (!name) return;
+    const tmpl: TaskTemplate = {
+      id: uuid(),
+      name: name.trim(),
+      title: title.trim(),
+      description,
+      agent: agent || null,
+      priority,
+      tags: parseTags(tags),
+    };
+    await api.updateSettings({ ...settings, taskTemplates: [...templates, tmpl] });
+    await refreshSettings();
+  };
 
   const submit = async () => {
     if (!pid) return setError("Select a project.");
@@ -87,6 +120,24 @@ export function CreateTaskModal({
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
         }}
       >
+        {templates.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs text-neutral-400">Start from a template</label>
+            <select
+              className="input"
+              value=""
+              onChange={(e) => {
+                const t = templates.find((x) => x.id === e.target.value);
+                if (t) applyTemplate(t);
+              }}
+            >
+              <option value="">— none —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {!lockProject && (
           <div>
             <label className="mb-1 block text-xs text-neutral-400">Project</label>
@@ -183,7 +234,15 @@ export function CreateTaskModal({
           </p>
         )}
         {error && <div className="text-xs text-red-400">{error}</div>}
-        <div className="mt-1 flex justify-end gap-2">
+        <div className="mt-1 flex items-center justify-end gap-2">
+          <button
+            className="btn !mr-auto !px-2 text-xs text-neutral-400"
+            onClick={saveAsTemplate}
+            disabled={!title.trim()}
+            title="Save these fields as a reusable template"
+          >
+            <BookmarkPlus size={13} /> Save as template
+          </button>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={submit} disabled={busy}>
             {busy ? "Creating…" : "Create task"}

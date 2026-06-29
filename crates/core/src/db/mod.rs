@@ -296,23 +296,53 @@ impl Db {
         project_id: Option<&str>,
     ) -> Result<Vec<Session>> {
         let conn = self.lock();
-        let mut sql = String::from("SELECT * FROM sessions");
-        let mut clauses = Vec::new();
-        if task_id.is_some() {
-            clauses.push("task_id = :task");
-        }
-        if project_id.is_some() {
-            clauses.push("project_id = :project");
-        }
-        if !clauses.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&clauses.join(" AND "));
-        }
-        sql.push_str(" ORDER BY created_at DESC");
-        let mut stmt = conn.prepare(&sql)?;
+        // Both params are always referenced (NULL = no filter) so binding them is
+        // valid whether or not a filter was supplied.
+        let sql = "SELECT * FROM sessions \
+             WHERE (:task IS NULL OR task_id = :task) \
+             AND (:project IS NULL OR project_id = :project) \
+             ORDER BY created_at DESC";
+        let mut stmt = conn.prepare(sql)?;
         let rows = stmt
             .query_map(
                 rusqlite::named_params! { ":task": task_id, ":project": project_id },
+                map_session,
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Full-text search across session prompts, results, errors, and event
+    /// transcripts. Returns distinct matching sessions, newest first.
+    pub fn search_sessions(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<Session>> {
+        // Escape LIKE wildcards in the user's query so they match literally.
+        let escaped = query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{escaped}%");
+        let conn = self.lock();
+        // `:project` is always referenced (NULL = no filter) so the bind is valid
+        // regardless of whether a project was supplied.
+        let sql = "SELECT DISTINCT s.* FROM sessions s \
+             LEFT JOIN session_events e ON e.session_id = s.id \
+             WHERE (s.prompt LIKE :q ESCAPE '\\' OR s.result_text LIKE :q ESCAPE '\\' \
+                    OR s.error LIKE :q ESCAPE '\\' OR e.text LIKE :q ESCAPE '\\') \
+             AND (:project IS NULL OR s.project_id = :project) \
+             ORDER BY s.created_at DESC LIMIT :limit";
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt
+            .query_map(
+                rusqlite::named_params! {
+                    ":q": pattern,
+                    ":project": project_id,
+                    ":limit": limit as i64,
+                },
                 map_session,
             )?
             .collect::<rusqlite::Result<Vec<_>>>()?;

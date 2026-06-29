@@ -69,6 +69,7 @@ export function CommandPalette() {
       { id: "tasks", label: "Go to Tasks", icon: ListTodo, run: go("/tasks") },
       { id: "sched", label: "Go to Scheduled", icon: Clock, run: go("/scheduled") },
       { id: "time", label: "Go to Timeline", icon: GanttChartSquare, run: go("/timeline") },
+      { id: "search", label: "Search session history", icon: Search, run: go("/search") },
       { id: "set", label: "Go to Settings", icon: SettingsIcon, run: go("/settings") },
       {
         id: "run",

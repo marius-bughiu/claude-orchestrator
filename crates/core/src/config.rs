@@ -188,8 +188,30 @@ pub struct Settings {
     /// Outbound notification webhooks (Slack / Discord / generic).
     #[serde(default)]
     pub webhooks: Vec<WebhookConfig>,
+    /// Reusable task presets for quick task creation.
+    #[serde(default)]
+    pub task_templates: Vec<TaskTemplate>,
     /// Per-agent configuration, keyed by agent name.
     pub agents: BTreeMap<String, AgentConfig>,
+}
+
+/// A reusable preset for creating tasks. Fields map onto the task-create form;
+/// `agent` empty means "auto / balanced".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskTemplate {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub agent: Option<AgentKind>,
+    #[serde(default)]
+    pub priority: i64,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl Default for Settings {
@@ -222,6 +244,7 @@ impl Default for Settings {
             backup_interval_hours: 24,
             backup_dir: String::new(),
             webhooks: Vec::new(),
+            task_templates: Vec::new(),
             agents,
         }
     }

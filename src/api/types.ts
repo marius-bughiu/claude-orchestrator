@@ -202,7 +202,18 @@ export interface Settings {
   backupIntervalHours: number;
   backupDir: string;
   webhooks: WebhookConfig[];
+  taskTemplates: TaskTemplate[];
   agents: Record<string, AgentConfig>;
+}
+
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  agent: AgentKind | null;
+  priority: number;
+  tags: string[];
 }
 
 export interface AgentStat {
@@ -297,6 +308,13 @@ export interface TaskRollup {
   totalCostUsd: number;
   totalTokens: number;
   totalDurationSecs: number;
+}
+
+export interface SessionMatch {
+  session: Session;
+  taskTitle: string | null;
+  snippet: string;
+  matchedIn: string;
 }
 
 export interface StuckTask {

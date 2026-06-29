@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Play, Trash2, Save, RotateCcw, Copy, GitBranch, GitPullRequest, X, Plus } from "lucide-react";
+import { ArrowLeft, Play, Trash2, Save, RotateCcw, Copy, GitBranch, GitPullRequest, X, Plus, FileDown } from "lucide-react";
 import * as api from "../api";
 import { useStore } from "../store";
 import type { Session, Task } from "../api/types";
@@ -121,6 +121,15 @@ export function TaskDetailView() {
   const runNow = async () => { await api.runTaskNow(task.id); };
   const retry = async () => { await api.retryTask(task.id); };
   const clone = async () => { const t = await api.cloneTask(task.id); await refreshTasks(); navigate(`/tasks/${t.id}`); };
+  const exportTranscripts = async () => {
+    const md = await api.exportTaskTranscript(task.id);
+    const url = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `task-${task.id.slice(0, 8)}-transcripts.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const del = async () => { await api.deleteTask(task.id); await refreshTasks(); navigate("/tasks"); };
 
   return (
@@ -150,6 +159,7 @@ export function TaskDetailView() {
           <button className="btn" onClick={runNow}><Play size={14} /> Run now</button>
           <button className="btn" onClick={retry} title="Reset attempts and re-queue"><RotateCcw size={14} /> Retry</button>
           <button className="btn" onClick={clone} title="Duplicate as a new task"><Copy size={14} /> Clone</button>
+          <button className="btn" onClick={exportTranscripts} disabled={sessions.length === 0} title="Export all session transcripts as Markdown"><FileDown size={14} /> Transcripts</button>
           <button className="btn btn-danger" onClick={del}><Trash2 size={14} /></button>
         </div>
       </div>

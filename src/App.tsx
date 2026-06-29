@@ -14,6 +14,7 @@ import { DashboardView } from "./views/DashboardView";
 import { TimelineView } from "./views/TimelineView";
 import { SessionDetailView } from "./views/SessionDetailView";
 import { SettingsView } from "./views/SettingsView";
+import { SearchView } from "./views/SearchView";
 import { useStore } from "./store";
 
 const router = createHashRouter([
@@ -33,6 +34,7 @@ const router = createHashRouter([
       { path: "scheduled", element: <ScheduledView /> },
       { path: "timeline", element: <TimelineView /> },
       { path: "activity", element: <ActivityView /> },
+      { path: "search", element: <SearchView /> },
       { path: "sessions/:id", element: <SessionDetailView /> },
       { path: "settings", element: <SettingsView /> },
     ],

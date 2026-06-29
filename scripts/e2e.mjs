@@ -222,6 +222,27 @@ try {
     await page.getByRole("button", { name: "CSV" }).waitFor({ state: "visible" });
     assert.equal(await page.getByRole("button", { name: "CSV" }).isEnabled(), true);
   });
+  await check("session search returns matches with snippets", async () => {
+    await goto("/#/search");
+    await page.getByPlaceholder("Search session content…").fill("partials");
+    await seesText("in transcript");
+    await seesText(/matching "partials"/);
+  });
+  await check("create-task modal applies a template", async () => {
+    await goto("/#/tasks");
+    await page.getByRole("button", { name: "New task" }).click();
+    await seesText("Start from a template");
+    // Applying the "Bug fix" template prefills the title.
+    await page.getByText("Start from a template").waitFor({ state: "visible" });
+    // Scope to the modal overlay so we don't grab the page's project filter select.
+    await page.locator(".fixed.z-50").getByRole("combobox").first().selectOption({ label: "Bug fix" });
+    const titleVal = await page.locator('input[placeholder="Add user authentication"]').inputValue();
+    assert.ok(titleVal.startsWith("Fix"), `expected title prefilled from template, got "${titleVal}"`);
+  });
+  await check("task detail offers a transcript export", async () => {
+    await goto("/#/tasks/t1");
+    await page.getByRole("button", { name: "Transcripts" }).waitFor({ state: "visible" });
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

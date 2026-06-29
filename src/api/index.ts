@@ -10,6 +10,7 @@ import type {
   ActivityEntry,
   BranchInfo,
   Diagnostic,
+  SessionMatch,
   ConfigBundle,
   ImportResult,
   RebaseResult,
@@ -154,6 +155,12 @@ export const sessionDiff = (id: string) => invoke<SessionDiff>("session_diff", {
 // ---- Agent health & maintenance --------------------------------------------
 export const agentHealth = () => invoke<AgentHealth[]>("agent_health");
 export const diagnostics = () => invoke<Diagnostic[]>("diagnostics");
+export const searchSessions = (query: string, projectId?: string) =>
+  invoke<SessionMatch[]>("search_sessions", { query, projectId: projectId ?? null });
+export const exportTaskTranscript = (taskId: string) =>
+  invoke<string>("export_task_transcript", { taskId });
+export const exportProjectTranscript = (projectId: string) =>
+  invoke<string>("export_project_transcript", { projectId });
 export const listBranches = (projectId: string) =>
   invoke<BranchInfo[]>("list_branches", { projectId });
 export const deleteBranch = (projectId: string, branch: string) =>

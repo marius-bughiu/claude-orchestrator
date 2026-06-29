@@ -426,6 +426,31 @@ pub fn diagnostics(state: State<AppState>) -> CmdResult<Vec<Diagnostic>> {
 }
 
 #[tauri::command]
+pub fn search_sessions(
+    state: State<AppState>,
+    query: String,
+    project_id: Option<String>,
+) -> CmdResult<Vec<SessionMatch>> {
+    state
+        .engine
+        .search_sessions(&query, project_id.as_deref())
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn export_task_transcript(state: State<AppState>, task_id: String) -> CmdResult<String> {
+    state.engine.export_task_transcript(&task_id).map_err(err)
+}
+
+#[tauri::command]
+pub fn export_project_transcript(state: State<AppState>, project_id: String) -> CmdResult<String> {
+    state
+        .engine
+        .export_project_transcript(&project_id)
+        .map_err(err)
+}
+
+#[tauri::command]
 pub fn list_branches(state: State<AppState>, project_id: String) -> CmdResult<Vec<BranchInfo>> {
     state.engine.list_branches(&project_id).map_err(err)
 }

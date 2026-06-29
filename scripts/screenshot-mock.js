@@ -81,6 +81,7 @@ window.__SHOT_MOCK__ = (() => {
   const settings = {
     running: true, maxConcurrent: 3, tickIntervalSecs: 10, defaultAgent: "claude", permissionMode: "bypass-permissions", sessionTimeoutSecs: 1800, roadmapEnabled: true, verifyEnabled: true, balanceAgents: true, liveStreaming: true, notificationsEnabled: true, isolateWorktrees: true, autoCommit: true, autoPr: false, scheduleRefreshSecs: 300, retryEnabled: true, retryBaseSecs: 60, retryMaxSecs: 3600, activityRetention: 2000, backupEnabled: false, backupIntervalHours: 24, backupDir: "",
     webhooks: [{ id: "wh1", name: "Team Slack", url: "https://hooks.slack.com/services/T00/B00/xyz", kind: "slack", enabled: true, onTaskComplete: true, onTaskFail: true, projectIds: [], template: "" }],
+    taskTemplates: [{ id: "tpl1", name: "Bug fix", title: "Fix: ", description: "Reproduce, fix, and add a regression test.", agent: null, priority: 100, tags: ["bug"] }],
     agents: {
       claude: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: 25, tokenLimit: null }, windowHours: 5, enabled: true },
       gemini: { binary: null, model: null, extraArgs: [], limits: { costLimitUsd: null, tokenLimit: null }, windowHours: 5, enabled: true },
@@ -172,6 +173,16 @@ window.__TAURI_INTERNALS__ = {
         return Promise.resolve(map[args.projectId] || []);
       }
       case "merge_pull_request": return Promise.resolve(null);
+      case "search_sessions": {
+        const q = (args.query || "").toLowerCase();
+        if (!q.trim()) return Promise.resolve([]);
+        return Promise.resolve([
+          { session: m.session, taskTitle: m.tasks[0].title, snippet: `…I'll add a partials buffer keyed by message id and flush on message stop, matching "${args.query}"…`, matchedIn: "transcript" },
+        ]);
+      }
+      case "export_task_transcript":
+      case "export_project_transcript":
+        return Promise.resolve("# Transcript: demo\n\n_1 session(s)_\n\n## task · claude\n\n### Prompt\n\nDo the thing\n");
       case "diagnostics": return Promise.resolve([
         { category: "agent", name: "claude CLI", level: "ok", detail: "claude 1.2.3 (Claude Code)" },
         { category: "agent", name: "gemini CLI", level: "ok", detail: "gemini-cli 0.4.0" },

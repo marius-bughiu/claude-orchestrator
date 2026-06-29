@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  ArrowLeft, Plus, Sparkles, FolderOpen, FileCog, Trash2, Save, Github,
+  ArrowLeft, Plus, Sparkles, FolderOpen, FileCog, Trash2, Save, Github, FileDown,
 } from "lucide-react";
 import { useStore } from "../store";
 import * as api from "../api";
@@ -241,6 +241,16 @@ export function ProjectDetailView() {
     }
   };
 
+  const exportTranscripts = async () => {
+    const md = await api.exportProjectTranscript(project.id);
+    const url = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.name}-transcripts.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6">
       <button className="mb-3 flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-200" onClick={() => navigate("/projects")}>
@@ -257,6 +267,7 @@ export function ProjectDetailView() {
           <button className="btn" onClick={importIssues} disabled={importing}><Github size={14} /> {importing ? "Importing…" : "Import issues"}</button>
           <button className="btn" onClick={scaffold}><FileCog size={14} /> Scaffold</button>
           <button className="btn" onClick={() => openPath(project.path)}><FolderOpen size={14} /> Open</button>
+          <button className="btn" onClick={exportTranscripts} title="Export every session transcript as Markdown"><FileDown size={14} /> Transcripts</button>
           <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={14} /> Task</button>
           <button className="btn btn-danger" onClick={remove}><Trash2 size={14} /></button>
         </div>

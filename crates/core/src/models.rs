@@ -493,6 +493,17 @@ pub struct AgentHealth {
     pub version: Option<String>,
 }
 
+/// A session matched by a full-text search, with a snippet of the matching text
+/// and where it was found (`result`, `prompt`, `error`, or `transcript`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMatch {
+    pub session: Session,
+    pub task_title: Option<String>,
+    pub snippet: String,
+    pub matched_in: String,
+}
+
 /// One line item in a system self-check. Categories: `agent`, `git`,
 /// `database`, `project`. Level is `ok`, `warn`, or `error`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

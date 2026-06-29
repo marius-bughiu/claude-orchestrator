@@ -1078,6 +1078,121 @@ impl Engine {
         Ok(out)
     }
 
+    /// Full-text search over session content (prompts, results, errors, and
+    /// event transcripts). Returns matches with a context snippet.
+    pub fn search_sessions(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+    ) -> Result<Vec<SessionMatch>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sessions = self.db.search_sessions(q, project_id, 100)?;
+        // Resolve task titles in one pass.
+        let titles: std::collections::HashMap<String, String> = self
+            .db
+            .list_tasks(None)?
+            .into_iter()
+            .map(|t| (t.id, t.title))
+            .collect();
+        let needle = q.to_lowercase();
+        let mut out = Vec::with_capacity(sessions.len());
+        for s in sessions {
+            // Prefer a snippet from the session's own fields; fall back to events.
+            let (matched_in, snippet) =
+                if let Some(snip) = snippet_of(s.result_text.as_deref(), &needle) {
+                    ("result", snip)
+                } else if let Some(snip) = snippet_of(Some(&s.prompt), &needle) {
+                    ("prompt", snip)
+                } else if let Some(snip) = snippet_of(s.error.as_deref(), &needle) {
+                    ("error", snip)
+                } else {
+                    let ev =
+                        self.db.list_events(&s.id)?.into_iter().find_map(|e| {
+                            e.text.as_deref().and_then(|t| snippet_of(Some(t), &needle))
+                        });
+                    ("transcript", ev.unwrap_or_default())
+                };
+            let task_title = s.task_id.as_ref().and_then(|id| titles.get(id).cloned());
+            out.push(SessionMatch {
+                task_title,
+                snippet,
+                matched_in: matched_in.to_string(),
+                session: s,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Render all sessions for a task as a single Markdown transcript archive.
+    pub fn export_task_transcript(&self, task_id: &str) -> Result<String> {
+        let task = self.db.get_task(task_id)?;
+        let sessions = self.db.list_sessions(Some(task_id), None)?;
+        let mut md = format!(
+            "# Transcript: {}\n\n_{} session(s)_\n",
+            task.title,
+            sessions.len()
+        );
+        for s in &sessions {
+            md.push('\n');
+            md.push_str(&self.session_markdown(s)?);
+        }
+        Ok(md)
+    }
+
+    /// Render every session in a project as a single Markdown transcript archive.
+    pub fn export_project_transcript(&self, project_id: &str) -> Result<String> {
+        let project = self.db.get_project(project_id)?;
+        let sessions = self.db.list_sessions(None, Some(project_id))?;
+        let mut md = format!(
+            "# Transcript: {}\n\n_{} session(s)_\n",
+            project.name,
+            sessions.len()
+        );
+        for s in &sessions {
+            md.push('\n');
+            md.push_str(&self.session_markdown(s)?);
+        }
+        Ok(md)
+    }
+
+    /// Markdown for a single session: metadata header, prompt, and transcript.
+    fn session_markdown(&self, s: &Session) -> Result<String> {
+        let mut md = format!("## {} · {}\n\n", s.kind.as_str(), s.agent.as_str());
+        md.push_str(&format!("- **Session:** {}\n", s.id));
+        md.push_str(&format!("- **Status:** {}\n", s.status.as_str()));
+        if let Some(b) = &s.branch {
+            md.push_str(&format!("- **Branch:** {b}\n"));
+        }
+        if let Some(pr) = &s.pr_url {
+            md.push_str(&format!("- **Pull request:** {pr}\n"));
+        }
+        md.push_str(&format!(
+            "- **Tokens:** {} · **Cost:** ${:.4} · **Turns:** {}\n",
+            s.usage.input_tokens + s.usage.output_tokens,
+            s.usage.total_cost_usd,
+            s.usage.num_turns,
+        ));
+        md.push_str("\n### Prompt\n\n");
+        md.push_str(&s.prompt);
+        md.push_str("\n\n### Transcript\n\n");
+        for e in self.db.list_events(&s.id)? {
+            let label = e.kind.replace('_', " ");
+            md.push_str(&format!("**{label}**\n\n"));
+            if let Some(t) = &e.text {
+                if e.kind == "tool_use" {
+                    md.push_str(&format!("```\n{t}\n```\n\n"));
+                } else {
+                    md.push_str(t);
+                    md.push_str("\n\n");
+                }
+            }
+        }
+        Ok(md)
+    }
+
     /// List orchestrator-created branches in a project repo, flagging which are
     /// merged and which a running session is still using.
     pub fn list_branches(&self, project_id: &str) -> Result<Vec<BranchInfo>> {
@@ -1922,6 +2037,39 @@ fn prune_backups(dir: &Path, keep: usize) {
     }
 }
 
+/// Build a one-line, ~160-char context snippet around the first case-insensitive
+/// occurrence of `needle` (already lowercased) in `text`. Returns None if absent.
+fn snippet_of(text: Option<&str>, needle: &str) -> Option<String> {
+    let text = text?;
+    let pos = text.to_lowercase().find(needle)?;
+    // Work on char boundaries so multi-byte text never panics.
+    let start = text[..pos]
+        .char_indices()
+        .rev()
+        .take(60)
+        .last()
+        .map(|(i, _)| i)
+        .unwrap_or(pos);
+    let end_budget = pos + needle.len() + 100;
+    let end = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .chain(std::iter::once(text.len()))
+        .find(|&i| i >= end_budget)
+        .unwrap_or(text.len());
+    let mut snip = text[start..end]
+        .replace(['\n', '\r'], " ")
+        .trim()
+        .to_string();
+    if start > 0 {
+        snip.insert(0, '…');
+    }
+    if end < text.len() {
+        snip.push('…');
+    }
+    Some(snip)
+}
+
 /// Append reviewer/error feedback as a bounded, clearly-delimited section.
 fn append_feedback(description: &str, feedback: &str) -> String {
     format!(
@@ -2042,6 +2190,76 @@ mod tests {
         assert!(diags
             .iter()
             .all(|d| ["ok", "warn", "error"].contains(&d.level.as_str())));
+    }
+
+    #[test]
+    fn search_sessions_finds_content_and_snippets() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let mut s = eng.new_session(
+            &p,
+            None,
+            AgentKind::Claude,
+            SessionKind::Task,
+            "implement the widget exporter",
+        );
+        s.result_text = Some("Added a CSV exporter and tests for the widget pipeline".into());
+        eng.db.upsert_session(&s).unwrap();
+
+        let hits = eng.search_sessions("exporter", None).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].matched_in, "result");
+        assert!(hits[0].snippet.to_lowercase().contains("exporter"));
+
+        // Matches the prompt too, and project filtering works.
+        assert_eq!(eng.search_sessions("widget", Some(&p.id)).unwrap().len(), 1);
+        assert_eq!(
+            eng.search_sessions("widget", Some("other")).unwrap().len(),
+            0
+        );
+        // Empty query yields nothing.
+        assert!(eng.search_sessions("   ", None).unwrap().is_empty());
+        // No false positives.
+        assert!(eng
+            .search_sessions("nonexistent-token", None)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn export_task_transcript_includes_sessions() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let task = crate::service::create_task(
+            &eng.db,
+            crate::service::CreateTaskInput {
+                project_id: p.id.clone(),
+                title: "Build it".into(),
+                description: String::new(),
+                priority: None,
+                agent: None,
+                model: None,
+                depends_on: vec![],
+                tags: vec![],
+                max_attempts: None,
+            },
+        )
+        .unwrap();
+        let mut s = eng.new_session(
+            &p,
+            Some(&task),
+            AgentKind::Claude,
+            SessionKind::Task,
+            "do the thing",
+        );
+        s.result_text = Some("done".into());
+        eng.db.upsert_session(&s).unwrap();
+
+        let md = eng.export_task_transcript(&task.id).unwrap();
+        assert!(md.contains("# Transcript: Build it"));
+        assert!(md.contains("1 session(s)"));
+        assert!(md.contains("### Prompt"));
+        assert!(md.contains("do the thing"));
     }
 
     #[test]
