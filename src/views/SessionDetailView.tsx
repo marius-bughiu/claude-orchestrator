@@ -5,6 +5,7 @@ import * as api from "../api";
 import type { Session, SessionEvent } from "../api/types";
 import { useStore } from "../store";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
+import { Markdown } from "../components/Markdown";
 import { ModelInput } from "../components/ModelInput";
 import { SessionDiffPanel } from "../components/SessionDiffPanel";
 import { formatCost, formatDuration, formatTokens } from "../lib/format";
@@ -115,8 +116,8 @@ function EventRow({ event, root }: { event: SessionEvent; root?: string }) {
       );
     case "assistant":
       return (
-        <div className="whitespace-pre-wrap rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm text-neutral-200">
-          {event.text}
+        <div className="rounded-md bg-[var(--color-surface-2)] px-3 py-2">
+          <Markdown>{event.text ?? ""}</Markdown>
         </div>
       );
     case "thinking":
@@ -353,8 +354,8 @@ export function SessionDetailView() {
           </div>
         )}
         {streaming.assistant && (
-          <div className="whitespace-pre-wrap rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm text-neutral-200">
-            {streaming.assistant}
+          <div className="rounded-md bg-[var(--color-surface-2)] px-3 py-2">
+            <Markdown>{streaming.assistant}</Markdown>
             <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-indigo-400 align-middle" />
           </div>
         )}
