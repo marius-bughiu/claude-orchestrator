@@ -10,7 +10,14 @@ use serde::Serialize;
 /// A structured event the front-end can react to. Serialized as
 /// `{ "type": "...", ... }` for the webview.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+// `rename_all` only camelCases the variant names (the `type` tag); without
+// `rename_all_fields` the struct-variant fields stay snake_case (`session_id`),
+// so the webview's `sessionId` filter never matches and live updates are dropped.
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum OrchestratorEvent {
     /// A new streamed event was persisted for a session.
     SessionEvent {
@@ -52,4 +59,24 @@ pub struct NullSink;
 
 impl EventSink for NullSink {
     fn emit(&self, _event: OrchestratorEvent) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The webview filters live events on camelCase `sessionId`; if the struct
+    // variant fields regress to snake_case the live session view stops updating.
+    #[test]
+    fn session_event_fields_are_camel_case() {
+        let ev = OrchestratorEvent::SessionDelta {
+            session_id: "s1".into(),
+            kind: "assistant".into(),
+            text: "hi".into(),
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains("\"type\":\"sessionDelta\""), "{json}");
+        assert!(json.contains("\"sessionId\":\"s1\""), "{json}");
+        assert!(!json.contains("session_id"), "{json}");
+    }
 }
