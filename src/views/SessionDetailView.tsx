@@ -1,14 +1,107 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User, GitBranch, GitPullRequest, Download } from "lucide-react";
+import { ArrowLeft, Square, Send, Wrench, Brain, CheckCircle2, AlertTriangle, Terminal, User, GitBranch, GitPullRequest, Download, FileText } from "lucide-react";
 import * as api from "../api";
 import type { Session, SessionEvent } from "../api/types";
+import { useStore } from "../store";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
 import { ModelInput } from "../components/ModelInput";
 import { SessionDiffPanel } from "../components/SessionDiffPanel";
 import { formatCost, formatDuration, formatTokens } from "../lib/format";
 
-function EventRow({ event }: { event: SessionEvent }) {
+/** Strip an agent's absolute path down to a repo-relative one for display. */
+function relativePath(p: string, root?: string): string {
+  if (!p) return p;
+  if (root && p.startsWith(root)) return p.slice(root.length).replace(/^\/+/, "");
+  // Isolated runs live in a temp worktree: …/claude-orchestrator-worktrees/<id>/<rel>.
+  const m = p.match(/claude-orchestrator-worktrees\/[^/]+\/(.*)$/);
+  if (m) return m[1];
+  return p.replace(/^\/(?:Users|home)\/[^/]+\//, "~/");
+}
+
+const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
+/** The single most useful argument to show next to a tool name — no JSON dump. */
+function toolArg(name: string, input: Record<string, unknown>, root?: string): string | null {
+  const fp = str(input.file_path) ?? str(input.path) ?? str(input.notebook_path);
+  switch (name) {
+    case "Read":
+    case "Edit":
+    case "MultiEdit":
+    case "Write":
+    case "NotebookEdit":
+      return fp ? relativePath(fp, root) : null;
+    case "Bash":
+      return str(input.command) ?? null;
+    case "Grep":
+    case "Glob":
+      return str(input.pattern) ?? null;
+    case "Task":
+      return str(input.description) ?? null;
+    case "WebFetch":
+    case "WebSearch":
+      return str(input.url) ?? str(input.query) ?? null;
+    case "TodoWrite":
+      return null;
+    default:
+      return fp ? relativePath(fp, root) : (str(input.pattern) ?? str(input.command) ?? str(input.url) ?? null);
+  }
+}
+
+const toolName = (e: SessionEvent): string => ((e.data as { name?: string } | null)?.name) ?? e.text ?? "";
+const toolInput = (e: SessionEvent): Record<string, unknown> => ((e.data as { input?: Record<string, unknown> } | null)?.input) ?? {};
+const isErrorResult = (e: SessionEvent): boolean => Boolean((e.data as { isError?: boolean } | null)?.isError);
+
+type RenderItem = { kind: "event"; event: SessionEvent } | { kind: "reads"; id: number; paths: string[] };
+
+/** Collapse the raw event stream for display: drop redundant (successful) tool
+ *  output, and group runs of consecutive Reads into a single row. */
+function buildRenderItems(events: SessionEvent[], root?: string): RenderItem[] {
+  // Successful tool results just echo file contents / command output — noise in
+  // this timeline. Keep only errors, which are worth surfacing.
+  const visible = events.filter((e) => !(e.kind === "tool_result" && !isErrorResult(e)));
+  const items: RenderItem[] = [];
+  let i = 0;
+  while (i < visible.length) {
+    const e = visible[i];
+    if (e.kind === "tool_use" && toolName(e) === "Read") {
+      const paths: string[] = [];
+      const id = e.id;
+      while (i < visible.length && visible[i].kind === "tool_use" && toolName(visible[i]) === "Read") {
+        const fp = str(toolInput(visible[i]).file_path);
+        paths.push(fp ? relativePath(fp, root) : "(unknown)");
+        i++;
+      }
+      items.push({ kind: "reads", id, paths });
+    } else {
+      items.push({ kind: "event", event: e });
+      i++;
+    }
+  }
+  return items;
+}
+
+function ReadsRow({ paths }: { paths: string[] }) {
+  return (
+    <div className="flex gap-2 px-3 py-1 text-xs text-amber-300/90">
+      <FileText size={13} className="mt-0.5 shrink-0" />
+      {paths.length === 1 ? (
+        <span className="min-w-0 truncate">
+          <span className="font-medium">Read</span> <span className="text-neutral-400">{paths[0]}</span>
+        </span>
+      ) : (
+        <div className="min-w-0">
+          <span className="font-medium">Read {paths.length} files</span>
+          <div className="mt-0.5 flex flex-col gap-0.5 text-[11px] text-neutral-400">
+            {paths.map((p, idx) => <span key={idx} className="truncate">{p}</span>)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EventRow({ event, root }: { event: SessionEvent; root?: string }) {
   const data = event.data as Record<string, unknown> | null;
   switch (event.kind) {
     case "user_message":
@@ -33,20 +126,19 @@ function EventRow({ event }: { event: SessionEvent }) {
           <span className="whitespace-pre-wrap">{event.text}</span>
         </div>
       );
-    case "tool_use":
+    case "tool_use": {
+      const name = toolName(event);
+      const arg = toolArg(name, toolInput(event), root);
       return (
         <div className="flex gap-2 px-3 py-1 text-xs text-amber-300/90">
           <Wrench size={13} className="mt-0.5 shrink-0" />
-          <div className="min-w-0">
-            <span className="font-medium">{event.text}</span>
-            {data?.input != null && (
-              <pre className="mt-0.5 max-h-40 overflow-auto rounded bg-black/30 p-1.5 text-[11px] text-neutral-400">
-                {JSON.stringify(data.input, null, 2)}
-              </pre>
-            )}
-          </div>
+          <span className="min-w-0 truncate">
+            <span className="font-medium">{name}</span>
+            {arg && <span className="ml-1.5 text-neutral-400">{arg}</span>}
+          </span>
         </div>
       );
+    }
     case "tool_result":
       return (
         <div className="flex gap-2 px-3 py-1 text-[11px] text-neutral-500">
@@ -90,6 +182,8 @@ export function SessionDetailView() {
   const [message, setMessage] = useState("");
   const [model, setModel] = useState("");
   const [sending, setSending] = useState(false);
+  const projects = useStore((s) => s.projects);
+  const root = session ? projects.find((p) => p.id === session.projectId)?.path : undefined;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -247,7 +341,11 @@ export function SessionDetailView() {
           <span className="text-neutral-500">Prompt:</span>{" "}
           <span className="whitespace-pre-wrap">{session.prompt.slice(0, 600)}{session.prompt.length > 600 ? "…" : ""}</span>
         </div>
-        {events.map((e) => <EventRow key={e.id} event={e} />)}
+        {buildRenderItems(events, root).map((item) =>
+          item.kind === "reads"
+            ? <ReadsRow key={`reads-${item.id}`} paths={item.paths} />
+            : <EventRow key={item.event.id} event={item.event} root={root} />
+        )}
         {streaming.thinking && (
           <div className="flex gap-2 px-3 py-1 text-xs italic text-neutral-500">
             <Brain size={13} className="mt-0.5 shrink-0" />
