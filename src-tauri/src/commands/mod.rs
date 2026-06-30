@@ -466,6 +466,18 @@ pub fn session_throughput(state: State<AppState>, days: u32) -> CmdResult<Vec<Th
 }
 
 #[tauri::command]
+pub fn project_analytics(
+    state: State<AppState>,
+    project_id: String,
+    days: u32,
+) -> CmdResult<ProjectAnalytics> {
+    state
+        .engine
+        .project_analytics(&project_id, days)
+        .map_err(err)
+}
+
+#[tauri::command]
 pub fn export_task_transcript(state: State<AppState>, task_id: String) -> CmdResult<String> {
     state.engine.export_task_transcript(&task_id).map_err(err)
 }

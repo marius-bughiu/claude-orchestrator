@@ -140,6 +140,20 @@ window.__TAURI_INTERNALS__ = {
         { task: m.tasks[1], projectName: "claude-orchestrator", effectivePriority: 95 },
         { task: m.tasks[5], projectName: "claude-orchestrator", effectivePriority: 35 },
       ].slice(0, args.limit ?? 8));
+      case "project_analytics": {
+        const days = 14, base = Date.now();
+        return Promise.resolve({
+          stats: { sessions: 28, completed: 24, failed: 4, successRate: 24 / 28, totalCostUsd: 9.42, totalTokens: 1840000, avgDurationSecs: 156 },
+          byAgent: [
+            { agent: "claude", sessions: 20, completed: 18, failed: 2, successRate: 0.9, avgCostUsd: 0.34, totalCostUsd: 6.8, avgDurationSecs: 168 },
+            { agent: "gemini", sessions: 8, completed: 6, failed: 2, successRate: 0.75, avgCostUsd: 0.33, totalCostUsd: 2.62, avgDurationSecs: 121 },
+          ],
+          throughput: Array.from({ length: days }, (_, i) => {
+            const d = new Date(base - (days - 1 - i) * 8.64e7).toISOString().slice(0, 10);
+            return { date: d, completed: 1 + Math.round(3 * Math.abs(Math.sin(i))), failed: i % 5 === 0 ? 1 : 0 };
+          }),
+        });
+      }
       case "session_throughput": {
         const days = args.days ?? 14;
         const base = Date.now();

@@ -1169,6 +1169,121 @@ impl Engine {
         self.db.session_throughput(days)
     }
 
+    /// Per-project analytics: headline totals, a per-agent breakdown, and a daily
+    /// completed/failed series — all derived from the project's task sessions.
+    pub fn project_analytics(&self, project_id: &str, days: u32) -> Result<ProjectAnalytics> {
+        let sessions = self.db.list_sessions(None, Some(project_id))?;
+        // Finished task sessions are the basis for stats and the agent breakdown.
+        let finished: Vec<&Session> = sessions
+            .iter()
+            .filter(|s| {
+                s.kind == SessionKind::Task
+                    && matches!(
+                        s.status,
+                        SessionStatus::Completed | SessionStatus::Failed | SessionStatus::TimedOut
+                    )
+            })
+            .collect();
+
+        let mut stats = ProjectStats::default();
+        let mut dur_sum = 0.0;
+        let mut dur_n = 0u32;
+        // Per-agent accumulators.
+        let mut per_agent: HashMap<AgentKind, (u32, u32, u32, f64, f64, u32)> = HashMap::new();
+        for s in &finished {
+            stats.sessions += 1;
+            stats.total_cost_usd += s.usage.total_cost_usd;
+            stats.total_tokens += s.usage.input_tokens + s.usage.output_tokens;
+            let ok = s.status == SessionStatus::Completed;
+            if ok {
+                stats.completed += 1;
+            } else {
+                stats.failed += 1;
+            }
+            let dur = match (s.started_at, s.ended_at) {
+                (Some(a), Some(b)) => Some((b - a).num_milliseconds() as f64 / 1000.0),
+                _ => None,
+            };
+            if let Some(d) = dur {
+                dur_sum += d;
+                dur_n += 1;
+            }
+            let e = per_agent.entry(s.agent).or_insert((0, 0, 0, 0.0, 0.0, 0));
+            e.0 += 1;
+            if ok {
+                e.1 += 1;
+            } else {
+                e.2 += 1;
+            }
+            e.3 += s.usage.total_cost_usd;
+            if let Some(d) = dur {
+                e.4 += d;
+                e.5 += 1;
+            }
+        }
+        stats.success_rate = if stats.sessions > 0 {
+            stats.completed as f64 / stats.sessions as f64
+        } else {
+            0.0
+        };
+        stats.avg_duration_secs = if dur_n > 0 {
+            dur_sum / dur_n as f64
+        } else {
+            0.0
+        };
+
+        let mut by_agent: Vec<AgentStat> = per_agent
+            .into_iter()
+            .map(|(agent, (sess, comp, fail, cost, dsum, dn))| AgentStat {
+                agent,
+                sessions: sess,
+                completed: comp,
+                failed: fail,
+                success_rate: if sess > 0 {
+                    comp as f64 / sess as f64
+                } else {
+                    0.0
+                },
+                avg_cost_usd: if sess > 0 { cost / sess as f64 } else { 0.0 },
+                total_cost_usd: cost,
+                avg_duration_secs: if dn > 0 { dsum / dn as f64 } else { 0.0 },
+            })
+            .collect();
+        by_agent.sort_by_key(|a| std::cmp::Reverse(a.sessions));
+
+        // Throughput: completed vs failed sessions per day over the window.
+        let now = Utc::now();
+        let cutoff = now - chrono::Duration::days(days.max(1) as i64 - 1);
+        let mut buckets: std::collections::BTreeMap<String, (u32, u32)> = Default::default();
+        for s in &sessions {
+            let Some(ended) = s.ended_at else { continue };
+            if ended < cutoff {
+                continue;
+            }
+            let day = ended.format("%Y-%m-%d").to_string();
+            let e = buckets.entry(day).or_insert((0, 0));
+            match s.status {
+                SessionStatus::Completed => e.0 += 1,
+                SessionStatus::Failed | SessionStatus::TimedOut => e.1 += 1,
+                _ => {}
+            }
+        }
+        let throughput = buckets
+            .into_iter()
+            .map(|(date, (completed, failed))| ThroughputPoint {
+                date,
+                completed,
+                failed,
+            })
+            .collect();
+
+        Ok(ProjectAnalytics {
+            stats,
+            by_agent,
+            throughput,
+        })
+    }
+
     /// Full-text search over session content (prompts, results, errors, and
     /// event transcripts). Returns matches with a context snippet.
     pub fn search_sessions(
@@ -2659,6 +2774,35 @@ mod tests {
             .unwrap();
         // Cap of 2 pending honored.
         assert_eq!(eng.db.count_pending_tasks_for_project(&p.id).unwrap(), 2);
+    }
+
+    #[test]
+    fn project_analytics_aggregates_sessions() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+        let mk_sess = |agent, status, cost| {
+            let mut s = eng.new_session(&p, None, agent, SessionKind::Task, "x");
+            s.status = status;
+            s.usage.total_cost_usd = cost;
+            s.usage.input_tokens = 100;
+            s.usage.output_tokens = 50;
+            eng.db.upsert_session(&s).unwrap();
+        };
+        mk_sess(AgentKind::Claude, SessionStatus::Completed, 0.5);
+        mk_sess(AgentKind::Claude, SessionStatus::Completed, 0.3);
+        mk_sess(AgentKind::Claude, SessionStatus::Failed, 0.2);
+        // A still-running session must be excluded from the finished stats.
+        mk_sess(AgentKind::Claude, SessionStatus::Running, 9.9);
+
+        let a = eng.project_analytics(&p.id, 14).unwrap();
+        assert_eq!(a.stats.sessions, 3);
+        assert_eq!(a.stats.completed, 2);
+        assert_eq!(a.stats.failed, 1);
+        assert!((a.stats.success_rate - 2.0 / 3.0).abs() < 1e-9);
+        assert!((a.stats.total_cost_usd - 1.0).abs() < 1e-9);
+        assert_eq!(a.stats.total_tokens, 450);
+        assert_eq!(a.by_agent.len(), 1);
+        assert_eq!(a.by_agent[0].sessions, 3);
     }
 
     #[test]

@@ -302,6 +302,13 @@ try {
     await seesText("Roadmap cooldown (min)");
     await seesText("skips generating tasks that duplicate work already open");
   });
+  await check("project detail shows analytics", async () => {
+    await goto("/#/projects/p1");
+    await seesText("Analytics");
+    await seesText("finished task sessions");
+    await seesText("Total cost");
+    await seesText("Avg duration");
+  });
 
   await check("no uncaught page exceptions across the run", async () => {
     assert.equal(pageErrors.length, 0, `page errors:\n${pageErrors.map((e) => e.stack || e.message).join("\n---\n")}`);

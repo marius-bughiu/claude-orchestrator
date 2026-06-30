@@ -496,6 +496,29 @@ pub struct AgentHealth {
     pub version: Option<String>,
 }
 
+/// Aggregate stats for one project's finished task sessions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStats {
+    pub sessions: u32,
+    pub completed: u32,
+    pub failed: u32,
+    pub success_rate: f64,
+    pub total_cost_usd: f64,
+    pub total_tokens: u64,
+    pub avg_duration_secs: f64,
+}
+
+/// A project's analytics bundle: headline totals, a per-agent breakdown, and a
+/// daily completed/failed throughput series — for the project detail view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectAnalytics {
+    pub stats: ProjectStats,
+    pub by_agent: Vec<AgentStat>,
+    pub throughput: Vec<ThroughputPoint>,
+}
+
 /// Sessions that ended on a given day, split by terminal outcome. Used for the
 /// dashboard throughput chart.
 #[derive(Debug, Clone, Serialize, Deserialize)]

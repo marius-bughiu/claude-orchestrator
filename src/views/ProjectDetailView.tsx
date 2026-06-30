@@ -11,6 +11,7 @@ import { TaskTable } from "../components/TaskTable";
 import { CreateTaskModal } from "../components/CreateTaskModal";
 import { UpcomingTasks } from "../components/UpcomingTasks";
 import { ProjectHealth } from "../components/ProjectHealth";
+import { ProjectAnalyticsPanel } from "../components/ProjectAnalyticsPanel";
 import { ProjectMemoryPanel } from "../components/ProjectMemoryPanel";
 import { BranchMaintenance } from "../components/BranchMaintenance";
 import { SessionKindBadge, SessionStatusBadge, AgentBadge } from "../components/Badges";
@@ -276,6 +277,8 @@ export function ProjectDetailView() {
       {notice && <div className="mb-4 rounded-md border border-indigo-500/30 bg-indigo-600/10 px-3 py-2 text-xs text-indigo-200">{notice}</div>}
 
       <ProjectHealth project={project} />
+
+      <div className="mb-5"><ProjectAnalyticsPanel projectId={project.id} /></div>
 
       <div className="mb-5"><ProjectSettings project={project} /></div>
 

@@ -330,6 +330,22 @@ export interface ThroughputPoint {
   failed: number;
 }
 
+export interface ProjectStats {
+  sessions: number;
+  completed: number;
+  failed: number;
+  successRate: number;
+  totalCostUsd: number;
+  totalTokens: number;
+  avgDurationSecs: number;
+}
+
+export interface ProjectAnalytics {
+  stats: ProjectStats;
+  byAgent: AgentStat[];
+  throughput: ThroughputPoint[];
+}
+
 export interface QueuedTask {
   task: Task;
   projectName: string;

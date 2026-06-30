@@ -12,6 +12,7 @@ import type {
   Diagnostic,
   SessionMatch,
   ThroughputPoint,
+  ProjectAnalytics,
   QueuedTask,
   ConfigBundle,
   ImportResult,
@@ -169,6 +170,8 @@ export const upcomingQueue = (limit: number) =>
   invoke<QueuedTask[]>("upcoming_queue", { limit });
 export const sessionThroughput = (days: number) =>
   invoke<ThroughputPoint[]>("session_throughput", { days });
+export const projectAnalytics = (projectId: string, days: number) =>
+  invoke<ProjectAnalytics>("project_analytics", { projectId, days });
 export const listBranches = (projectId: string) =>
   invoke<BranchInfo[]>("list_branches", { projectId });
 export const deleteBranch = (projectId: string, branch: string) =>

@@ -113,6 +113,7 @@ pub fn run() {
             commands::search_sessions,
             commands::upcoming_queue,
             commands::session_throughput,
+            commands::project_analytics,
             commands::export_task_transcript,
             commands::export_project_transcript,
             commands::list_branches,
