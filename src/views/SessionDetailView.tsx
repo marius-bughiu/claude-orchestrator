@@ -53,7 +53,9 @@ const toolName = (e: SessionEvent): string => ((e.data as { name?: string } | nu
 const toolInput = (e: SessionEvent): Record<string, unknown> => ((e.data as { input?: Record<string, unknown> } | null)?.input) ?? {};
 const isErrorResult = (e: SessionEvent): boolean => Boolean((e.data as { isError?: boolean } | null)?.isError);
 
-type RenderItem = { kind: "event"; event: SessionEvent } | { kind: "reads"; id: number; paths: string[] };
+type RenderItem =
+  | { kind: "event"; event: SessionEvent; dupBody?: boolean }
+  | { kind: "reads"; id: number; paths: string[] };
 
 /** Collapse the raw event stream for display: drop redundant (successful) tool
  *  output, and group runs of consecutive Reads into a single row. */
@@ -62,6 +64,7 @@ function buildRenderItems(events: SessionEvent[], root?: string): RenderItem[] {
   // this timeline. Keep only errors, which are worth surfacing.
   const visible = events.filter((e) => !(e.kind === "tool_result" && !isErrorResult(e)));
   const items: RenderItem[] = [];
+  let lastAssistant: string | null = null;
   let i = 0;
   while (i < visible.length) {
     const e = visible[i];
@@ -75,7 +78,11 @@ function buildRenderItems(events: SessionEvent[], root?: string): RenderItem[] {
       }
       items.push({ kind: "reads", id, paths });
     } else {
-      items.push({ kind: "event", event: e });
+      if (e.kind === "assistant") lastAssistant = (e.text ?? "").trim();
+      // The final result text usually repeats the last assistant message; when it
+      // does, render just the completion bar instead of showing the prose twice.
+      const dupBody = e.kind === "result" && !!e.text && e.text.trim() === lastAssistant;
+      items.push({ kind: "event", event: e, dupBody });
       i++;
     }
   }
@@ -102,7 +109,7 @@ function ReadsRow({ paths }: { paths: string[] }) {
   );
 }
 
-function EventRow({ event, root }: { event: SessionEvent; root?: string }) {
+function EventRow({ event, root, dupBody }: { event: SessionEvent; root?: string; dupBody?: boolean }) {
   const data = event.data as Record<string, unknown> | null;
   switch (event.kind) {
     case "user_message":
@@ -149,14 +156,24 @@ function EventRow({ event, root }: { event: SessionEvent; root?: string }) {
       );
     case "result": {
       const usage = (data?.usage ?? {}) as Record<string, number>;
+      // Show the summary prose only when it isn't already shown as the preceding
+      // assistant message; otherwise keep just the completion bar.
+      const showBody = !!event.text && !dupBody;
       return (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">
-          <CheckCircle2 size={14} />
-          <span>{event.text || "Completed"}</span>
-          <span className="ml-auto text-neutral-500">
-            {formatTokens((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0))} tok ·{" "}
-            {formatCost(usage.totalCostUsd ?? 0)}
-          </span>
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-emerald-300">
+          <div className="flex items-center gap-2 text-xs">
+            <CheckCircle2 size={14} />
+            <span>Completed</span>
+            <span className="ml-auto text-neutral-500">
+              {formatTokens((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0))} tok ·{" "}
+              {formatCost(usage.totalCostUsd ?? 0)}
+            </span>
+          </div>
+          {showBody && (
+            <div className="mt-1.5 border-t border-emerald-500/15 pt-1.5 text-neutral-200">
+              <Markdown>{event.text ?? ""}</Markdown>
+            </div>
+          )}
         </div>
       );
     }
@@ -345,7 +362,7 @@ export function SessionDetailView() {
         {buildRenderItems(events, root).map((item) =>
           item.kind === "reads"
             ? <ReadsRow key={`reads-${item.id}`} paths={item.paths} />
-            : <EventRow key={item.event.id} event={item.event} root={root} />
+            : <EventRow key={item.event.id} event={item.event} root={root} dupBody={item.dupBody} />
         )}
         {streaming.thinking && (
           <div className="flex gap-2 px-3 py-1 text-xs italic text-neutral-500">
