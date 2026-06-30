@@ -745,6 +745,17 @@ impl Engine {
             "info",
             format!("roadmap loop starting for {}", project.name),
         );
+        // Surface the run in the activity feed as soon as it starts, not only on
+        // completion — otherwise an in-progress roadmap (which can take minutes)
+        // is invisible everywhere except the Timeline.
+        self.record_activity(
+            "roadmap",
+            "info",
+            format!("Roadmap planning started for {}", project.name),
+            Some(&project.id),
+            None,
+            Some(&session.id),
+        );
         let spec = self.run_spec(project, agent, &prompt, None);
         self.clone().spawn_session_job(session, spec, None, false);
         Ok(())
@@ -2231,11 +2242,27 @@ impl Engine {
     fn handle_roadmap_outcome(&self, session: &Session, outcome: &RunOutcome) -> Result<()> {
         let Some(text) = &outcome.result_text else {
             self.log("info", "roadmap produced no output");
+            self.record_activity(
+                "roadmap",
+                "warn",
+                "Roadmap planning finished — agent produced no output",
+                Some(&session.project_id),
+                None,
+                Some(&session.id),
+            );
             return Ok(());
         };
         let specs = parse::parse_roadmap_tasks(text);
         if specs.is_empty() {
             self.log("info", "roadmap generated no new tasks");
+            self.record_activity(
+                "roadmap",
+                "info",
+                "Roadmap planning finished — no new tasks",
+                Some(&session.project_id),
+                None,
+                Some(&session.id),
+            );
             return Ok(());
         }
         let project = self.db.get_project(&session.project_id)?;
@@ -2324,16 +2351,22 @@ impl Engine {
                 project.name
             ),
         );
-        if created > 0 {
-            self.record_activity(
-                "roadmap",
-                "info",
-                format!("Roadmap generated {created} task(s)"),
-                Some(&project.id),
-                None,
-                Some(&session.id),
-            );
-        }
+        // Always close out the run in the activity feed, even when it produced
+        // no tasks — a roadmap run that silently generates zero tasks otherwise
+        // leaves no trace of why nothing was queued.
+        let message = if created > 0 {
+            format!("Roadmap generated {created} task(s){skip_note}")
+        } else {
+            format!("Roadmap planning finished — no new tasks{skip_note}")
+        };
+        self.record_activity(
+            "roadmap",
+            "info",
+            message,
+            Some(&project.id),
+            None,
+            Some(&session.id),
+        );
         Ok(())
     }
 }
@@ -2774,6 +2807,37 @@ mod tests {
             .unwrap();
         // Cap of 2 pending honored.
         assert_eq!(eng.db.count_pending_tasks_for_project(&p.id).unwrap(), 2);
+    }
+
+    #[test]
+    fn roadmap_records_activity_for_generated_and_empty_runs() {
+        let eng = engine();
+        let p = mk_project(&eng, "/tmp/p", vec![AgentKind::Claude]);
+
+        // A productive run records a "generated N task(s)" entry.
+        let s1 = eng.new_session(&p, None, AgentKind::Claude, SessionKind::Roadmap, "plan");
+        let batch = "```json\n[{\"title\":\"a\"},{\"title\":\"b\"}]\n```";
+        eng.handle_roadmap_outcome(&s1, &roadmap_outcome(batch))
+            .unwrap();
+        let acts = eng.db.list_activity(50, Some(&p.id)).unwrap();
+        assert!(
+            acts.iter()
+                .any(|a| a.kind == "roadmap" && a.message.contains("generated 2 task(s)")),
+            "expected a roadmap activity entry for a productive run, got: {:?}",
+            acts.iter().map(|a| &a.message).collect::<Vec<_>>()
+        );
+
+        // An empty run still leaves a trace rather than vanishing silently.
+        let s2 = eng.new_session(&p, None, AgentKind::Claude, SessionKind::Roadmap, "plan");
+        eng.handle_roadmap_outcome(&s2, &roadmap_outcome("```json\n[]\n```"))
+            .unwrap();
+        let acts = eng.db.list_activity(50, Some(&p.id)).unwrap();
+        assert!(
+            acts.iter()
+                .any(|a| a.kind == "roadmap" && a.message.contains("no new tasks")),
+            "expected a roadmap activity entry for an empty run, got: {:?}",
+            acts.iter().map(|a| &a.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
